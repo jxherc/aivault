@@ -69,6 +69,12 @@ func Search(dir, query string, limit int) ([]Hit, error) {
 	if len(hits) > limit {
 		hits = hits[:limit]
 	}
+	// synced tool memories can be long. keep results small, the path has the rest
+	for i := range hits {
+		if r := []rune(hits[i].Text); len(r) > 1500 {
+			hits[i].Text = string(r[:1500]) + " … (cut, full text in " + hits[i].Path + ")"
+		}
+	}
 	return hits, nil
 }
 

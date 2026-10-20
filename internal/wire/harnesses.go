@@ -129,6 +129,10 @@ var hermesDir = winDir("LOCALAPPDATA", "hermes", homeDir("HERMES_HOME", ".hermes
 
 var hermes = build(&spec{
 	name: "hermes", label: "Hermes Agent", bins: []string{"hermes"},
+	memories: []memSrc{
+		{files: memFile(func(e *Env) string { return filepath.Join(hermesDir(e), "memories", "MEMORY.md") }), split: splitSep, prefix: "§"},
+		{files: memFile(func(e *Env) string { return filepath.Join(hermesDir(e), "memories", "USER.md") }), split: splitSep, prefix: "§"},
+	},
 	dir:   hermesDir,
 	rules: in(hermesDir, "SOUL.md"), rulesHow: rulesCopy,
 	skills:  in(hermesDir, "skills"),
@@ -201,8 +205,10 @@ var qwenDir = homeDir("QWEN_HOME", ".qwen")
 
 var qwen = build(&spec{
 	name: "qwen", label: "Qwen Code", bins: []string{"qwen"},
-	dir:   qwenDir,
-	rules: in(qwenDir, "QWEN.md"), rulesHow: rulesImport,
+	// qwen saves "remember this" here instead of the vault, so sync pulls it in
+	memories: []memSrc{{files: memTree(func(e *Env) string { return filepath.Join(qwenDir(e), "memories") })}},
+	dir:      qwenDir,
+	rules:    in(qwenDir, "QWEN.md"), rulesHow: rulesImport,
 	skills:    agentsSkills,
 	skillFrom: func(e *Env) []string { return []string{filepath.Join(qwenDir(e), "skills"), e.AgentsSkills} },
 	mcpFile:   in(qwenDir, "settings.json"), mcpKind: mcpJSON,
@@ -227,8 +233,9 @@ var dshDir = homeDir("DSH_HOME", ".dsh")
 
 var dsh = build(&spec{
 	name: "dsh", label: "DeepSeek Harness", bins: []string{"dsh"},
-	dir:   dshDir,
-	rules: in(dshDir, "AGENTS.md"), rulesHow: rulesCopy,
+	memories: []memSrc{{files: memFile(func(e *Env) string { return filepath.Join(dshDir(e), "lessons.md") }), split: splitBullets}},
+	dir:      dshDir,
+	rules:    in(dshDir, "AGENTS.md"), rulesHow: rulesCopy,
 	skills:    agentsSkills,
 	skillFrom: func(e *Env) []string { return []string{filepath.Join(dshDir(e), "skills"), e.AgentsSkills} },
 	yblock:    in(dshDir, "cordis.patch.yml"),

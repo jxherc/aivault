@@ -8,3 +8,4 @@
 - `wire.spec` + `build`: one table entry per harness (harnesses.go). kinds: rules import/copy, json list, yaml list, json/toml/yaml mcp, raw yaml block (dsh)
 - `jsonApply/jsonUndo/jsonMissing`: own one key or a few list strings in a json(c) file. IfMissing ops are only undone if we added them
 - `yamlSet/yamlStrip`: marker block under a top-level key, or appended to a top-level list
+- `wire.syncNative` (native.go): copies each tool's own memories (claude auto memory, codex MEMORY.md, qwen memories/, hermes, dsh lessons) into vault/memory with stable ids. skips anything that looks like a secret. runs on every sync

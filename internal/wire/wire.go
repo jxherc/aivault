@@ -41,6 +41,8 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 		if err := Import(e, s, f, tools, out); err != nil {
 			return err
 		}
+		// runs even when nothing is new: a memory the tool rewrote still updates
+		syncNative(e, s, tools, out)
 	}
 
 	var failed []string
@@ -66,6 +68,11 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 		fmt.Fprintf(out, "  %-9s ok\n", t.Name)
 		if t.Note != "" {
 			fmt.Fprintf(out, "            note: %s\n", t.Note)
+		}
+		if t.Hints != nil {
+			for _, h := range t.Hints(e, s) {
+				fmt.Fprintf(out, "            note: %s\n", h)
+			}
 		}
 	}
 	for _, w := range syncLinks(e, s) {
@@ -157,6 +164,19 @@ func Names() []string {
 	var out []string
 	for _, t := range All {
 		out = append(out, t.Name)
+	}
+	return out
+}
+
+// Hints collects the not-an-error notes of every wired tool
+func Hints(e *Env, s *State) []string {
+	var out []string
+	for _, name := range s.Tools {
+		if t := Find(name); t != nil && t.Hints != nil {
+			for _, h := range t.Hints(e, s) {
+				out = append(out, name+": "+h)
+			}
+		}
 	}
 	return out
 }

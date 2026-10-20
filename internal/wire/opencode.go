@@ -1,7 +1,9 @@
 package wire
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/jxherc/aivault/internal/vault"
 )
@@ -51,7 +53,39 @@ var opencode = build(&spec{
 	mcpKind:  mcpJSON,
 	mcpPath:  []string{"mcp", mcpName},
 	mcpEntry: opencodeEntry,
+	hints:    opencodeSkillHint,
 })
+
+// a `"*": "deny"` skill allowlist silently blocks vault skills that aren't
+// listed. we don't edit someone's permission rules, we say which ones
+func opencodeSkillHint(e *Env, s *State) []string {
+	b, _ := read(opencodeCfg(e))
+	_, view, err := parseJSON(b)
+	if err != nil {
+		return nil
+	}
+	rules, _ := walk(view, []string{"permission", "skill"})
+	m, ok := rules.(map[string]any)
+	if !ok || m["*"] != "deny" {
+		return nil
+	}
+	skills, _ := vault.Skills(s.Vault)
+	var blocked []string
+	for _, sk := range skills {
+		if m[sk.Name] != "allow" {
+			blocked = append(blocked, sk.Name)
+		}
+	}
+	if len(blocked) == 0 {
+		return nil
+	}
+	ex := blocked
+	if len(ex) > 5 {
+		ex = ex[:5]
+	}
+	return []string{fmt.Sprintf("your opencode skill allowlist (\"*\": \"deny\") blocks %d of %d vault skills, e.g. %s. to allow one, add \"<name>\": \"allow\" under permission.skill in %s",
+		len(blocked), len(skills), strings.Join(ex, ", "), tilde(opencodeCfg(e), e.Home))}
+}
 
 // opencode and kilo: one `command` array, program first
 func opencodeEntry(bin string, args []string) any {

@@ -23,7 +23,7 @@ const usage = `aivault: one folder of rules, skills and memory for all your ai t
 
   aivault init              set up the vault and connect your tools
   aivault doctor            check everything is still connected
-  aivault sync              refresh after editing the vault
+  aivault sync              refresh the tools and pull in anything new from them
   aivault import            move existing rules and skills into the vault
   aivault remove [tool...]  disconnect tools (all if none given)
   aivault search <query>    search memories and skills
@@ -246,6 +246,9 @@ func cmdDoctor() error {
 		return err
 	}
 	bad := wire.Doctor(e, s)
+	for _, h := range wire.Hints(e, s) {
+		fmt.Println("note:", h)
+	}
 	if s.Vault != "" {
 		if n := unwired(e, s); len(n) > 0 {
 			fmt.Printf("installed but not connected: %s. run `aivault init` to connect.\n", strings.Join(n, ", "))
@@ -269,7 +272,9 @@ func cmdSync() error {
 	if s.Vault == "" {
 		return errors.New("nothing is wired yet. run `aivault init`")
 	}
-	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), false, os.Stdout)
+	// sync pulls in whatever the tools gained since: rules text written
+	// outside our block, new skill folders, and their own memories
+	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, os.Stdout)
 }
 
 func cmdImport(args []string) error {

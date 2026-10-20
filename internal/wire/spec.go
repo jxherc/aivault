@@ -50,8 +50,10 @@ type spec struct {
 	skillFrom func(e *Env) []string // folders import reads skills from. nil = just skills
 	importAt  func(e *Env) string   // rules file import reads, when it's not `rules`
 
-	check func(e *Env, s *State) []string // anything tool-specific for doctor
-	note  string                          // see Tool.Note
+	check    func(e *Env, s *State) []string // anything tool-specific for doctor
+	note     string                          // see Tool.Note
+	memories []memSrc                        // see Tool.Memories
+	hints    func(e *Env, s *State) []string
 
 	mcpFile   func(e *Env) string
 	mcpKind   int
@@ -172,7 +174,10 @@ func (sp *spec) tomlTable(e *Env, s *State) string {
 }
 
 func build(sp *spec) *Tool {
-	t := &Tool{Name: sp.name, Label: sp.label, Note: sp.note}
+	t := &Tool{Name: sp.name, Label: sp.label, Note: sp.note, Hints: sp.hints}
+	if sp.memories != nil {
+		t.Memories = func(e *Env) []memSrc { return sp.memories }
+	}
 	t.Detect = func(e *Env) bool {
 		if exists(sp.dir(e)) {
 			return true

@@ -31,6 +31,10 @@ type Tool struct {
 	Remove    func(e *Env, s *State) error
 	Check     func(e *Env, s *State) []string
 	Note      string // printed after a successful apply, for things we can't fix for the user
+	// the tool's own memory files, which sync copies into the vault
+	Memories func(e *Env) []memSrc
+	// things worth knowing that aren't errors, shown by init and doctor
+	Hints func(e *Env, s *State) []string
 }
 
 var All = []*Tool{
@@ -67,6 +71,10 @@ var claude = &Tool{
 	Label:     "Claude Code",
 	RulesFile: func(e *Env) string { return filepath.Join(e.ClaudeDir, "CLAUDE.md") },
 	SkillFrom: func(e *Env) []string { return []string{filepath.Join(e.ClaudeDir, "skills")} },
+	// claude code's auto memory, one file per memory, per project
+	Memories: func(e *Env) []memSrc {
+		return []memSrc{{files: memGlob(func(e *Env) string { return filepath.Join(e.ClaudeDir, "projects", "*", "memory", "*.md") })}}
+	},
 	Detect: func(e *Env) bool {
 		return exists(e.ClaudeDir) || e.Has("claude")
 	},
@@ -136,6 +144,12 @@ var codex = build(&spec{
 	// codex 0.160 blocks every mcp call that isn't approved, and a headless
 	// run can't ask. our two tools only touch vault files, so pre-approve them
 	tomlExtra: []string{`default_tools_approval_mode = "approve"`},
+	// codex's consolidated memory. raw_memories.md and rollout_summaries are
+	// its raw input, so they're left out
+	memories: []memSrc{
+		{files: memFile(func(e *Env) string { return filepath.Join(e.CodexDir, "memories", "MEMORY.md") }), split: splitHeading, prefix: "# Task Group"},
+		{files: memFile(func(e *Env) string { return filepath.Join(e.CodexDir, "memories", "memory_summary.md") }), split: splitHeading, prefix: "## "},
+	},
 	check: func(e *Env, s *State) []string {
 		if ov, _ := read(filepath.Join(e.CodexDir, "AGENTS.override.md")); len(bytes.TrimSpace(ov)) > 0 {
 			return []string{"codex has AGENTS.override.md, so it ignores AGENTS.md and the vault rules"}

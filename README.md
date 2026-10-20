@@ -37,13 +37,21 @@ aivault init --yes --vault ~/ai-vault --tools claude,codex,qwen
 
 ## bringing in what you already have
 
-if your tools already have rules or skills, init offers to move them into the vault (`--import` in scripts, or `aivault import` later):
+if your tools already have rules, skills or their own memories, init offers to pull them into the vault (`--import` in scripts). after that, **`aivault sync` does it every time**: anything the tools gained since the last sync ends up in the vault too.
 
-- the text of each connected tool's global rules file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.qwen/QWEN.md` and so on) goes into `me.md`, one section per tool. identical text is only added once. relative `@file` imports get turned into full paths so they still work from the vault
-- skill folders from each tool's skills folder (`~/.claude/skills/`, `~/.agents/skills/`, `~/.qwen/skills/`...) move to `skills/`, and a link takes their old place. identical copies count as one skill
-- skills that are links to some other folder stay where they are. so does a skill whose name is already taken by a different one
+- **rules text**: whatever is in a tool's global rules file outside the ai vault block (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.qwen/QWEN.md` and so on) moves into `me.md`, one section per tool. identical text is only added once. relative `@file` imports get turned into full paths so they still work from the vault. this also catches notes a tool appends to its own rules file
+- **skills**: new skill folders in a tool's skills folder (`~/.claude/skills/`, `~/.agents/skills/`, `~/.qwen/skills/`...) move to `skills/`, and a link takes their old place. identical copies count as one skill. skills that are links to some other folder stay where they are, and so does a skill whose name is already taken by a different one
+- **the tools' own memories** get copied (not moved) into `memory/`, so every tool can search them:
+  - Claude Code's auto memory (`~/.claude/projects/*/memory/`), tagged with the project
+  - Codex's consolidated memory (`~/.codex/memories/MEMORY.md` and `memory_summary.md`), one memory per task group or section. its raw logs are left out
+  - Qwen Code's `~/.qwen/memories/`
+  - Hermes Agent's `~/.hermes/memories/MEMORY.md` and `USER.md`
+  - DeepSeek Harness's `~/.dsh/lessons.md`, one memory per bullet
 
-the tool files end up holding only the ai vault block. `aivault remove` puts the old text and skill folders back; the vault keeps its copies. if the rules from all your tools add up past codex's 32 KB limit, init warns you so you can trim `me.md`.
+  each copy has a fixed id, so when a tool rewrites a memory the vault copy updates in place instead of piling up duplicates. the tool keeps its own memory exactly as it was
+- **memories that look like they hold a password or key are left out**, and sync lists the files so you can copy what you want by hand. the check is a pattern match, so it can miss a secret or flag something harmless
+
+the tool files end up holding only the ai vault block. `aivault remove` puts the old rules text and skill folders back. the vault keeps its copies, including synced memories.
 
 ## what's in the vault
 
@@ -63,7 +71,7 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 | --- | --- |
 | `aivault init` | set up the vault and connect tools |
 | `aivault doctor` | check everything is still connected |
-| `aivault sync` | run after editing the vault (codex keeps a copy of the rules) |
+| `aivault sync` | refresh every tool after editing the vault, and pull in anything new from them (rules text, skills, their own memories) |
 | `aivault import` | move existing rules and skills into the vault |
 | `aivault remove [tool...]` | disconnect tools, all of them if none named |
 | `aivault search <query>` | search memories and skills |
@@ -118,6 +126,7 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 - tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see edits after `aivault sync`
 - tools load their rules when a session starts. restart them after `init` or `sync`
 - a tool you install after setup isn't connected until you run `aivault init` again
+- a memory a tool saves in its own memory reaches the vault at the next `aivault sync`, not right away. nothing runs sync for you
 - search is plain keyword matching, not semantic search. a memory worded differently from the question can be missed
 - `vault_remember` is told never to save secrets, but nothing enforces it. the vault is plain markdown, and it syncs wherever you put it (icloud, dropbox, git), so don't keep keys or passwords in it
 
@@ -127,10 +136,10 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 - `init --import` moves rules text and skill folders. it leaves skills alone when they're links to somewhere else, or when a different skill already has the same name. read what it prints
 
 **per tool**
-- **OpenCode**: if your `opencode.json` has a skill allowlist (`"permission": {"skill": {"*": "deny", ...}}`), vault skills not on that list stay blocked. add them or loosen the rule. OpenCode also reads `~/.claude/skills` and `~/.agents/skills`, so it can list a skill twice
+- **OpenCode**: if your `opencode.json` has a skill allowlist (`"permission": {"skill": {"*": "deny", ...}}`), vault skills not on that list stay blocked. aivault doesn't edit your permission rules: `init` and `doctor` say how many vault skills are blocked, name some, and show the line to add. OpenCode also reads `~/.claude/skills` and `~/.agents/skills`, so it can list a skill twice
 - **Codex**: it blocks mcp calls nobody approved, and a headless run can't ask, so aivault pre-approves its own two tools (`default_tools_approval_mode = "approve"`). Codex also stops reading instructions at 32 KB. if your rules are bigger, raise `project_doc_max_bytes` in `~/.codex/config.toml`. `doctor` follows that setting
 - **Gemini CLI**: every mcp server is off in a folder you haven't trusted, user-level ones included. the vault rules still load, but `vault_search` only shows up once you trust the folder. if you route it through a proxy, Gemini CLI also calls its own built-in model names, which the proxy has to know
-- **Qwen Code**: "remember this" tends to land in Qwen's own memory (`~/.qwen/memories/`) instead of the vault, even when the rules say otherwise. reading rules and searching the vault work
+- **Qwen Code**: "remember this" tends to land in Qwen's own memory (`~/.qwen/memories/`) instead of the vault, even when the rules say otherwise. `aivault sync` copies those memories into the vault, so they reach your other tools after the next sync, not right away
 - **Hermes Agent**: `SOUL.md` is its only global file, so the vault rules go there next to its persona
 - **ZCode** only loads mcp servers when `features.mcp` is on. aivault turns it on only if you never set it. your own `false` stays, and `doctor` tells you
 - **Neovate** also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
@@ -140,7 +149,7 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 - a vault path with spaces (like icloud's `Mobile Documents`) works for Claude Code's imports. Gemini and Qwen get a copy instead of an import, so run `sync` after edits there too
 - on windows, skill links fall back to copies when links aren't allowed. run `sync` after changing skills
 
-**what was tested for real** (2026-10-20, prompts that never mention the vault): Claude Code, Codex, OpenCode, Pi and DeepSeek Harness each answered from the vault rules, found a fact that only existed in a vault memory, and saved a new memory. Qwen Code passed the first two. the other tools are checked by unit tests and their own `mcp list` where installed, not by live model runs
+**what was tested for real** (2026-10-20, prompts that never mention the vault): Claude Code, Codex, OpenCode, Pi and DeepSeek Harness each answered from the vault rules, found a fact that only existed in a vault memory, and saved a new memory. Qwen Code passed the first two, and what it saved to its own memory showed up in the vault after a sync. Claude Code also found a memory that had only come from Hermes's own memory. the other tools are checked by unit tests and their own `mcp list` where installed, not by live model runs
 
 ## what it changes
 

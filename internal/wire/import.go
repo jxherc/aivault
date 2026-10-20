@@ -31,13 +31,15 @@ type SkillSrc struct {
 }
 
 type Found struct {
-	Rules   []RuleSrc
-	Skills  []SkillSrc
-	Skipped []string // things we saw but won't touch, with why
-	Linked  int      // skills that are links to somewhere else, left alone
+	Rules    []RuleSrc
+	Skills   []SkillSrc
+	Skipped  []string // things we saw but won't touch, with why
+	Linked   int      // skills that are links to somewhere else, left alone
+	Memories int      // tool memories not in the vault yet (copied, not moved)
+	tools    []string
 }
 
-func (f Found) Empty() bool { return len(f.Rules) == 0 && len(f.Skills) == 0 }
+func (f Found) Empty() bool { return len(f.Rules) == 0 && len(f.Skills) == 0 && f.Memories == 0 }
 
 // Summary is one short line per thing, for the wizard and the cli
 func (f Found) Summary(home string) []string {
@@ -49,6 +51,9 @@ func (f Found) Summary(home string) []string {
 	}
 	if n := f.unique(); n > 0 {
 		out = append(out, fmt.Sprintf("%d skill%s", n, plural(n)))
+	}
+	if f.Memories > 0 {
+		out = append(out, fmt.Sprintf("%d memor%s from the tools' own memory", f.Memories, map[bool]string{true: "y", false: "ies"}[f.Memories == 1]))
 	}
 	return out
 }
@@ -152,7 +157,8 @@ func toolLabel(name string) string {
 
 // Scan finds what import would move, without changing anything
 func Scan(e *Env, s *State, vaultDir string, tools []string) (Found, error) {
-	var f Found
+	f := Found{tools: tools}
+	f.Memories = countNewNative(e, vaultDir, tools)
 	byText := map[string]int{}
 	for _, tool := range tools {
 		p := rulesFile(e, tool)
