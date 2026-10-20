@@ -58,6 +58,7 @@ type spec struct {
 	mcpPath   []string                              // json: path to our entry. toml: table name. yaml: [key]
 	mcpEntry  func(bin string, args []string) any   // json shape
 	extraJSON []jsonOp                              // more json the mcp file needs, like zcode's features.mcp
+	tomlExtra []string                              // more lines in our toml table
 	mcpYAML   func(bin string, args []string) []ykv // yaml shape, under mcpPath[0] as mcpName
 }
 
@@ -163,7 +164,11 @@ func (sp *spec) rulesBody(s *State) (string, error) {
 
 func (sp *spec) tomlTable(e *Env, s *State) string {
 	args, _ := json.Marshal(mcpArgs(s)) // a json string array is a valid toml array
-	return fmt.Sprintf("[%s]\ncommand = %s\nargs = %s", strings.Join(sp.mcpPath, "."), tomlStr(e.Bin), args)
+	t := fmt.Sprintf("[%s]\ncommand = %s\nargs = %s", strings.Join(sp.mcpPath, "."), tomlStr(e.Bin), args)
+	for _, l := range sp.tomlExtra {
+		t += "\n" + l
+	}
+	return t
 }
 
 func build(sp *spec) *Tool {

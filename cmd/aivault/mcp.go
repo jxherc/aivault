@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -27,12 +28,22 @@ type rememberOut struct {
 	Path string `json:"path"`
 }
 
+// "gemini-cli-mcp-client" -> "gemini", "qwen-cli-mcp-client-ai-vault" -> "qwen",
+// "codex-mcp-client" -> "codex". anything else stays as the client sent it
+func clientName(n string) string {
+	n = strings.ToLower(n)
+	if i := strings.Index(n, "-mcp-client"); i > 0 {
+		n = n[:i]
+	}
+	return strings.TrimSuffix(n, "-cli")
+}
+
 func serveMCP(ctx context.Context, dir string) error {
 	s := mcp.NewServer(&mcp.Implementation{Name: "ai-vault", Version: version}, nil)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "vault_search",
-		Description: "search the user's ai vault: memories saved from any ai tool, plus skill descriptions. call at the start of a task.",
+		Description: "search what the user told other ai tools: their projects, servers, preferences and past decisions, plus their skills. call this first for any question about the user or their work, before searching files or saying you don't know.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, searchOut, error) {
 		hits, err := vault.Search(dir, in.Query, in.Limit)
 		if hits == nil {
@@ -43,11 +54,11 @@ func serveMCP(ctx context.Context, dir string) error {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "vault_remember",
-		Description: "save one lasting preference, correction or fact to the user's ai vault so every ai tool can find it later. never save secrets.",
+		Description: "save one lasting fact, preference or correction so every ai tool the user has can find it later. call it whenever the user says remember, from now on, i prefer, always or never. never save secrets.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in rememberIn) (*mcp.CallToolResult, rememberOut, error) {
 		from := ""
 		if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
-			from = p.ClientInfo.Name
+			from = clientName(p.ClientInfo.Name)
 		}
 		m, err := vault.Remember(dir, in.Text, from, in.Tags)
 		if err != nil {

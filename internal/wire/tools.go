@@ -131,6 +131,9 @@ var codex = build(&spec{
 	skills:  agentsSkills,
 	mcpFile: func(e *Env) string { return filepath.Join(e.CodexDir, "config.toml") },
 	mcpKind: mcpTOML, mcpPath: []string{"mcp_servers", mcpName},
+	// codex 0.160 blocks every mcp call that isn't approved, and a headless
+	// run can't ask. our two tools only touch vault files, so pre-approve them
+	tomlExtra: []string{`default_tools_approval_mode = "approve"`},
 	check: func(e *Env, s *State) []string {
 		if ov, _ := read(filepath.Join(e.CodexDir, "AGENTS.override.md")); len(bytes.TrimSpace(ov)) > 0 {
 			return []string{"codex has AGENTS.override.md, so it ignores AGENTS.md and the vault rules"}

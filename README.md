@@ -108,6 +108,8 @@ some quirks:
 - Neovate also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
 - Crush's license (FSL) is source-available, not open source
 - Gemini CLI stopped serving free accounts on 2026-06-18. it still works with an api key
+- Codex blocks mcp calls that aren't approved, and a headless run can't ask. aivault marks its own two tools as approved (`default_tools_approval_mode = "approve"`)
+- Qwen Code tends to save "remember this" into its own memory (`~/.qwen/memories/`) instead of the vault, even when told not to. it still reads the vault rules and searches the vault fine
 - Gemini CLI turns off every mcp server, user-level ones included, in a folder you haven't trusted. the vault rules still load, but `vault_search` only shows up once you trust the folder
 
 left out, and why:
