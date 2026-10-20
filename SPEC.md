@@ -7,13 +7,12 @@ the user runs `aivault init`, answers a few prompts, restarts their tools. after
 ## v1 scope
 
 in:
-- claude code, codex, opencode
+- 21 harnesses (see the readme table): claude code, codex, opencode, gemini cli, kilo code, crush, goose, pi, hermes, cline, zed, warp, open interpreter, aider, qwen code, kimi code, deepseek harness, zcode, minimax code, kode, neovate code
 - macos, linux, windows
 - shared rules file, shared skills, shared memory (search + save)
 - clean undo
 
 out (later, maybe):
-- cursor, gemini cli, others
 - searching past chat transcripts across tools
 - a desktop gui (the go core can sit behind a tauri app later)
 - any sync service. the vault is a folder; people put it in icloud, dropbox, syncthing or git if they want it on more machines
@@ -63,6 +62,8 @@ init also takes flags so it works in scripts: `aivault init --yes --vault ~/ai-v
 the wizard uses charmbracelet/huh. arrow keys and enter, nothing else to learn.
 
 ## how each tool gets wired
+
+the first three below were the v1 start. every harness is now an entry in `internal/wire/harnesses.go` (or `tools.go`): where its rules file is and whether it can import or needs a copy, a json/yaml instruction list if it has one, its skills folder, and where its mcp entry goes (json key, toml table, yaml entry, or dsh's yaml patch list). the readme has the full table.
 
 checked against current docs on 2026-10-19. these locations move, so doctor should re-check them and the table should be re-verified before each release.
 

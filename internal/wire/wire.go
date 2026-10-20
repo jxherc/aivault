@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/jxherc/aivault/internal/vault"
 )
@@ -29,7 +30,7 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 
 	for _, name := range tools {
 		if Find(name) == nil {
-			return fmt.Errorf("unknown tool %q (know: claude, codex, opencode)", name)
+			return fmt.Errorf("unknown tool %q (know: %s)", name, strings.Join(Names(), ", "))
 		}
 	}
 	if imp {
@@ -46,7 +47,7 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 	for _, name := range tools {
 		t := Find(name)
 		if t == nil {
-			return fmt.Errorf("unknown tool %q (know: claude, codex, opencode)", name)
+			return fmt.Errorf("unknown tool %q (know: %s)", name, strings.Join(Names(), ", "))
 		}
 		if !s.HasTool(name) {
 			s.Tools = append(s.Tools, name)
@@ -147,6 +148,14 @@ func Doctor(e *Env, s *State) []string {
 		}
 	}
 	return append(bad, checkLinks(s)...)
+}
+
+func Names() []string {
+	var out []string
+	for _, t := range All {
+		out = append(out, t.Name)
+	}
+	return out
 }
 
 // Detected lists the tools that look installed

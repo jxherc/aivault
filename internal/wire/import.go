@@ -117,25 +117,15 @@ func plural(n int) string {
 }
 
 func rulesFile(e *Env, tool string) string {
-	switch tool {
-	case "claude":
-		return filepath.Join(e.ClaudeDir, "CLAUDE.md")
-	case "codex":
-		return filepath.Join(e.CodexDir, "AGENTS.md")
-	case "opencode":
-		return filepath.Join(e.OpencodeDir, "AGENTS.md")
+	if t := Find(tool); t != nil && t.RulesFile != nil {
+		return t.RulesFile(e)
 	}
 	return ""
 }
 
 func skillDirs(e *Env, tool string) []string {
-	switch tool {
-	case "claude":
-		return []string{filepath.Join(e.ClaudeDir, "skills")}
-	case "codex":
-		return []string{e.AgentsSkills}
-	case "opencode":
-		return []string{filepath.Join(e.OpencodeDir, "skills"), e.AgentsSkills}
+	if t := Find(tool); t != nil && t.SkillFrom != nil {
+		return t.SkillFrom(e)
 	}
 	return nil
 }
@@ -342,8 +332,8 @@ func Import(e *Env, s *State, f Found, tools []string, out io.Writer) error {
 	if f.Linked > 0 {
 		fmt.Fprintf(out, "  left %d skill%s alone: they're links to folders outside these tools\n", f.Linked, plural(f.Linked))
 	}
-	if rules, err := vault.Rules(s.Vault); err == nil && len(rules) > codexMax-4096 && (s.HasTool("codex") || hasStr(tools, "codex")) {
-		fmt.Fprintf(out, "  warning: the vault rules are %s now. codex stops reading at %s, so trim me.md (the imported parts may repeat each other)\n", size(len(rules)), size(codexMax))
+	if rules, err := vault.Rules(s.Vault); err == nil && len(rules) > codexLimit-4096 && (s.HasTool("codex") || hasStr(tools, "codex")) {
+		fmt.Fprintf(out, "  warning: the vault rules are %s now. codex stops reading at %s, so trim me.md (the imported parts may repeat each other)\n", size(len(rules)), size(codexLimit))
 	}
 	return s.Save()
 }

@@ -21,6 +21,15 @@ type Env struct {
 	Run func(name string, args ...string) error
 	// is this cli on PATH
 	Has func(name string) bool
+	// env lookups for tool homes like GEMINI_CLI_HOME. nil = none set
+	Getenv func(string) string
+}
+
+func (e *Env) getenv(k string) string {
+	if e.Getenv == nil || k == "" {
+		return ""
+	}
+	return e.Getenv(k)
 }
 
 func DefaultEnv() (*Env, error) {
@@ -36,6 +45,7 @@ func DefaultEnv() (*Env, error) {
 		AgentsSkills: filepath.Join(home, ".agents", "skills"),
 		StateDir:     filepath.Join(home, ".aivault"),
 		Bin:          selfPath(),
+		Getenv:       os.Getenv,
 		Has: func(name string) bool {
 			_, err := exec.LookPath(name)
 			return err == nil

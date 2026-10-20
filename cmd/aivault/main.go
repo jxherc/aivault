@@ -30,7 +30,9 @@ const usage = `aivault: one folder of rules, skills and memory for all your ai t
   aivault mcp               the mcp server your tools launch
   aivault version
 
-tools: claude, codex, opencode
+tools: claude, codex, opencode, gemini, kilo, crush, goose, pi, hermes,
+       cline, zed, warp, interpreter, aider, qwen, kimi, dsh, zcode,
+       minimax, kode, neovate
 `
 
 func main() {
@@ -115,7 +117,13 @@ func cmdInit(args []string) error {
 			}
 		}
 	} else {
-		picked = found
+		// found now, plus whatever was wired before (it may not be detectable anymore)
+		picked = append([]string{}, found...)
+		for _, t := range s.Tools {
+			if !contains(picked, t) {
+				picked = append(picked, t)
+			}
+		}
 	}
 
 	if !*yes {
@@ -136,7 +144,21 @@ func cmdInit(args []string) error {
 		return err
 	}
 	fmt.Println("\ndone. restart your ai tools so they load the vault.")
+	fmt.Println(newToolNote)
 	return nil
+}
+
+const newToolNote = "installed another ai tool later? aivault won't notice on its own. run `aivault init` again to connect it."
+
+// tools that look installed but aren't connected
+func unwired(e *wire.Env, s *wire.State) []string {
+	var out []string
+	for _, name := range wire.Detected(e) {
+		if !s.HasTool(name) {
+			out = append(out, wire.Find(name).Label)
+		}
+	}
+	return out
 }
 
 func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []string, imp *bool) error {
@@ -144,8 +166,12 @@ func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []
 	for _, f := range found {
 		isFound[f] = true
 	}
+	// only what's installed or already connected. the full list is 21 long
 	var opts []huh.Option[string]
 	for _, t := range wire.All {
+		if !isFound[t.Name] && !contains(*picked, t.Name) && len(found) > 0 {
+			continue
+		}
 		label := t.Label
 		if !isFound[t.Name] {
 			label += " (not found)"
@@ -159,6 +185,7 @@ func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []
 			Value(vdir),
 		huh.NewMultiSelect[string]().
 			Title("connect these tools").
+			Description("only tools found on this computer are listed. others: aivault init --tools <name>").
 			Options(opts...).
 			Value(picked),
 	)).Run()
@@ -219,6 +246,11 @@ func cmdDoctor() error {
 		return err
 	}
 	bad := wire.Doctor(e, s)
+	if s.Vault != "" {
+		if n := unwired(e, s); len(n) > 0 {
+			fmt.Printf("installed but not connected: %s. run `aivault init` to connect.\n", strings.Join(n, ", "))
+		}
+	}
 	if len(bad) == 0 {
 		fmt.Printf("all good. vault: %s, tools: %s\n", s.Vault, strings.Join(s.Tools, ", "))
 		return nil

@@ -21,13 +21,20 @@ type Tool struct {
 	Name   string // used in flags and state
 	Label  string
 	Detect func(e *Env) bool
-	Skills func(e *Env) string // where this tool reads user skills
-	Apply  func(e *Env, s *State) error
-	Remove func(e *Env, s *State) error
-	Check  func(e *Env, s *State) []string
+	Skills func(e *Env) string // where we link vault skills for this tool, "" = none
+	// for import: the global rules file, and every skills folder the tool reads
+	RulesFile func(e *Env) string
+	SkillFrom func(e *Env) []string
+	Apply     func(e *Env, s *State) error
+	Remove    func(e *Env, s *State) error
+	Check     func(e *Env, s *State) []string
 }
 
-var All = []*Tool{claude, codex, opencode}
+var All = []*Tool{
+	claude, codex, opencode, gemini, kilo, crush, goose, pi, hermes,
+	cline, zed, warp, openInterpreter, aider,
+	qwen, kimi, dsh, zcode, minimax, kode, neovate,
+}
 
 func Find(name string) *Tool {
 	for _, t := range All {
@@ -53,8 +60,10 @@ func claudeImport(p string) string {
 }
 
 var claude = &Tool{
-	Name:  "claude",
-	Label: "Claude Code",
+	Name:      "claude",
+	Label:     "Claude Code",
+	RulesFile: func(e *Env) string { return filepath.Join(e.ClaudeDir, "CLAUDE.md") },
+	SkillFrom: func(e *Env) []string { return []string{filepath.Join(e.ClaudeDir, "skills")} },
 	Detect: func(e *Env) bool {
 		return exists(e.ClaudeDir) || e.Has("claude")
 	},
@@ -114,82 +123,26 @@ var claude = &Tool{
 // codex doesn't expand @imports, so its AGENTS.md block holds a copy.
 // mcp is a toml table in config.toml inside our own marker comments
 
-const codexMax = 32 * 1024 // codex's default project_doc_max_bytes
+var codex = build(&spec{
+	name: "codex", label: "Codex", bins: []string{"codex"},
+	dir:   func(e *Env) string { return e.CodexDir },
+	rules: func(e *Env) string { return filepath.Join(e.CodexDir, "AGENTS.md") }, rulesHow: rulesCopy, maxRules: codexLimit,
+	skills:  agentsSkills,
+	mcpFile: func(e *Env) string { return filepath.Join(e.CodexDir, "config.toml") },
+	mcpKind: mcpTOML, mcpPath: []string{"mcp_servers", mcpName},
+	check: func(e *Env, s *State) []string {
+		if ov, _ := read(filepath.Join(e.CodexDir, "AGENTS.override.md")); len(bytes.TrimSpace(ov)) > 0 {
+			return []string{"codex has AGENTS.override.md, so it ignores AGENTS.md and the vault rules"}
+		}
+		return nil
+	},
+})
 
-func codexBlock(s *State) (string, error) {
-	rules, err := vault.Rules(s.Vault)
-	if err != nil {
-		return "", err
-	}
-	return "<!-- copy of " + filepath.ToSlash(s.Vault) + ". edit the vault, then run `aivault sync` -->\n" + rules, nil
-}
+const codexLimit = 32 * 1024 // codex's project_doc_max_bytes default
 
 func tomlStr(v string) string {
 	b, _ := json.Marshal(v) // json string escapes are valid toml basic strings
 	return string(b)
-}
-
-var codex = &Tool{
-	Name:  "codex",
-	Label: "Codex",
-	Detect: func(e *Env) bool {
-		return exists(e.CodexDir) || e.Has("codex")
-	},
-	Skills: func(e *Env) string { return e.AgentsSkills },
-	Apply: func(e *Env, s *State) error {
-		body, err := codexBlock(s)
-		if err != nil {
-			return err
-		}
-		if err := setBlock(s, filepath.Join(e.CodexDir, "AGENTS.md"), mdMarks, body); err != nil {
-			return err
-		}
-
-		cfg := filepath.Join(e.CodexDir, "config.toml")
-		b, err := read(cfg)
-		if err != nil {
-			return err
-		}
-		// someone already has a table with our name outside the block. don't
-		// make a duplicate, codex would refuse to start
-		outside := tomlMarks.strip(b, "")
-		if bytes.Contains(outside, []byte("[mcp_servers."+mcpName+"]")) {
-			return fmt.Errorf("%s already has [mcp_servers.%s]. remove it and run again", cfg, mcpName)
-		}
-		args, _ := json.Marshal(mcpArgs(s)) // a json string array is a valid toml array
-		table := fmt.Sprintf("[mcp_servers.%s]\ncommand = %s\nargs = %s", mcpName, tomlStr(e.Bin), args)
-		return setBlock(s, cfg, tomlMarks, table)
-	},
-	Remove: func(e *Env, s *State) error {
-		if err := unBlock(s, filepath.Join(e.CodexDir, "AGENTS.md"), mdMarks); err != nil {
-			return err
-		}
-		return unBlock(s, filepath.Join(e.CodexDir, "config.toml"), tomlMarks)
-	},
-	Check: func(e *Env, s *State) []string {
-		var bad []string
-		p := filepath.Join(e.CodexDir, "AGENTS.md")
-		b, _ := read(p)
-		switch {
-		case !mdMarks.has(b):
-			bad = append(bad, p+" has no ai-vault block")
-		default:
-			if want, err := codexBlock(s); err == nil && mdMarks.body(b) != strings.ReplaceAll(strings.Trim(want, "\n"), "\r\n", "\n") {
-				bad = append(bad, "codex has an old copy of the vault rules. run `aivault sync`")
-			}
-			if len(b) > codexMax-1024 {
-				bad = append(bad, fmt.Sprintf("%s is %d bytes, codex stops reading at %d", p, len(b), codexMax))
-			}
-		}
-		if ov, _ := read(filepath.Join(e.CodexDir, "AGENTS.override.md")); len(bytes.TrimSpace(ov)) > 0 {
-			bad = append(bad, "codex has AGENTS.override.md, so it ignores AGENTS.md and the vault rules")
-		}
-		c, _ := read(filepath.Join(e.CodexDir, "config.toml"))
-		if !tomlMarks.has(c) {
-			bad = append(bad, "codex config.toml has no ai-vault mcp server")
-		}
-		return bad
-	},
 }
 
 // shared helpers for marker blocks

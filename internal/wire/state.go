@@ -29,13 +29,15 @@ type State struct {
 }
 
 type FileRec struct {
-	Created bool   `json:"created"`          // file didn't exist before us
-	Backup  string `json:"backup,omitempty"` // copy of the original
-	Sum     string `json:"sum"`              // sha256 of what we last wrote
-	Sep     string `json:"sep,omitempty"`    // what we put before our block
-	Moved   string `json:"moved,omitempty"`  // text import moved into the vault, put back on undo
-	Link    string `json:"link,omitempty"`   // the file was a symlink to this
-	Tool    string `json:"tool,omitempty"`
+	Created bool     `json:"created"`          // file didn't exist before us
+	Backup  string   `json:"backup,omitempty"` // copy of the original
+	Sum     string   `json:"sum"`              // sha256 of what we last wrote
+	Sep     string   `json:"sep,omitempty"`    // what we put before our block
+	Moved   string   `json:"moved,omitempty"`  // text import moved into the vault, put back on undo
+	Link    string   `json:"link,omitempty"`   // the file was a symlink to this
+	Tool    string   `json:"tool,omitempty"`
+	Line    string   `json:"line,omitempty"`  // yaml: the user's line we rewrote, like `mcp_servers: {}`
+	Added   []string `json:"added,omitempty"` // json keys we set only because they were missing
 }
 
 type ImportRec struct {

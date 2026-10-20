@@ -42,7 +42,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.TAP_TOKEN }}"
     homepage: https://github.com/jxherc/aivault
-    description: one folder of rules, skills and memory for claude code, codex and opencode
+    description: one folder of rules, skills and memory for all your ai coding tools
     # the binary isn't signed or notarized yet, so macos would block it.
     # drop this once it's signed
     hooks:
@@ -60,5 +60,5 @@ scoops:
       name: scoop-bucket
       token: "{{ .Env.TAP_TOKEN }}"
     homepage: https://github.com/jxherc/aivault
-    description: one folder of rules, skills and memory for claude code, codex and opencode
+    description: one folder of rules, skills and memory for all your ai coding tools
     license: MIT

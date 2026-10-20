@@ -27,6 +27,9 @@ func syncLinks(e *Env, s *State) []string {
 			continue
 		}
 		dir := t.Skills(e)
+		if dir == "" {
+			continue // aider and friends have no skills folder
+		}
 		for _, sk := range skills {
 			want[filepath.Join(dir, sk.Name)] = sk.Dir
 		}
