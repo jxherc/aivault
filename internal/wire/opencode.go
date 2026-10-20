@@ -9,7 +9,7 @@ import (
 
 	"github.com/tailscale/hujson"
 
-	"aivault/internal/vault"
+	"github.com/jxherc/ai-vault/internal/vault"
 )
 
 // opencode: no markers possible in json, so we patch two things in

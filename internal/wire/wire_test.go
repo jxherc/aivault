@@ -112,7 +112,7 @@ func TestApplyRemoveRestoresFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if c := get(t, claudeMD); !strings.HasPrefix(c, origClaude) || !strings.Contains(c, `@`+filepath.ToSlash(strings.ReplaceAll(vdir, " ", `\ `))+"/AGENTS.md") {
+	if c := get(t, claudeMD); !strings.HasPrefix(c, origClaude) || !strings.Contains(c, claudeImport(filepath.Join(vdir, "AGENTS.md"))) || !strings.Contains(c, `my\ vault`) {
 		t.Fatalf("claude md:\n%s", c)
 	}
 	if c := get(t, codexMD); !strings.Contains(c, "vault_search") {

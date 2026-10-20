@@ -1,4 +1,4 @@
-module aivault
+module github.com/jxherc/ai-vault
 
 go 1.27.2
 

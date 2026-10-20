@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"aivault/internal/vault"
+	"github.com/jxherc/ai-vault/internal/vault"
 )
 
 const mcpName = "ai-vault"

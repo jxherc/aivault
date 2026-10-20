@@ -4,11 +4,27 @@ one folder of rules, skills and memory that claude code, codex and opencode all 
 
 save a preference in claude code, and codex knows it the next time you open it. write a skill once and every tool has it.
 
+## install
+
+```sh
+brew install --cask jxherc/tap/aivault
+```
+
+windows, with scoop:
+
+```sh
+scoop bucket add jxherc https://github.com/jxherc/scoop-bucket
+scoop install aivault
+```
+
+or with go: `go install github.com/jxherc/ai-vault/cmd/aivault@latest`. binaries for mac, linux and windows are on the releases page.
+
+the mac binary isn't signed yet. the brew cask clears the quarantine flag after install so macos doesn't block it.
+
 ## setup
 
 ```sh
-go build -o aivault .
-./aivault init
+aivault init
 ```
 
 init asks where to keep the vault (default `~/ai-vault`) and which tools to connect, then restart those tools. for scripts:
@@ -75,6 +91,9 @@ there's no delete over mcp on purpose. delete memory files yourself.
 
 ```sh
 go test ./...
+go run ./cmd/aivault
 ```
+
+releases: push a tag like `v0.1.0`. the release workflow runs goreleaser, which builds every platform, makes the github release and updates the brew cask and scoop manifest. it needs a `TAP_TOKEN` secret that can write to `jxherc/homebrew-tap` and `jxherc/scoop-bucket`. try it locally with `goreleaser release --snapshot --clean`.
 
 see [SPEC.md](SPEC.md) for the v1 plan.

@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/mattn/go-isatty"
 
-	"aivault/internal/vault"
-	"aivault/internal/wire"
+	"github.com/jxherc/ai-vault/internal/vault"
+	"github.com/jxherc/ai-vault/internal/wire"
 )
 
 var version = "dev"

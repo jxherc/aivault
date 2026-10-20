@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"aivault/internal/vault"
+	"github.com/jxherc/ai-vault/internal/vault"
 )
 
 // syncLinks makes every vault skill show up in each skills folder a wired

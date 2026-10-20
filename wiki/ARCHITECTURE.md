@@ -1,8 +1,7 @@
 # architecture
 
 ```
-main.go        cli + init wizard
-mcp.go         mcp server (stdio), two tools
+cmd/aivault/   cli + init wizard (main.go), mcp server (mcp.go)
 internal/vault the folder: create, memories, search. knows nothing about tools
 internal/wire  everything that touches tool config: env paths, state, marked blocks, per-tool apply/remove/check, skill links
 ```

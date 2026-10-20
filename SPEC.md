@@ -127,7 +127,9 @@ init offers to move what the tools already have into the vault. moving, not copy
 
 ## shipping
 
-goreleaser builds mac (arm64, amd64), linux (arm64, amd64) and windows (amd64, arm64). publish to github releases, a homebrew tap and scoop. `go install` works too.
+goreleaser (`.goreleaser.yaml`) builds mac, linux and windows for amd64 and arm64. pushing a `v*` tag runs `.github/workflows/release.yml`: tests, then the github release, a homebrew cask in `jxherc/homebrew-tap` and a scoop manifest in `jxherc/scoop-bucket`. homebrew casks, not formulas, because goreleaser marks its formula publisher deprecated. `go install github.com/jxherc/ai-vault/cmd/aivault@latest` works too.
+
+the mac binary isn't signed or notarized. the cask strips the quarantine flag after install; apple may stop allowing that, so signing is the real fix later.
 
 ## v1 is done when
 

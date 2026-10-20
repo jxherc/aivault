@@ -1,0 +1,62 @@
+version: 2
+project_name: aivault
+
+builds:
+  - main: ./cmd/aivault
+    binary: aivault
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+release:
+  github:
+    owner: jxherc
+    name: ai-vault
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+
+# one token with write access to both repos below. the default actions
+# token can't push to other repos
+homebrew_casks:
+  - name: aivault
+    repository:
+      owner: jxherc
+      name: homebrew-tap
+      token: "{{ .Env.TAP_TOKEN }}"
+    homepage: https://github.com/jxherc/ai-vault
+    description: one folder of rules, skills and memory for claude code, codex and opencode
+    # the binary isn't signed or notarized yet, so macos would block it.
+    # drop this once it's signed
+    hooks:
+      post:
+        # `install` works on 2.18 and later. newer docs call it install_steps
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aivault"]
+          end
+
+scoops:
+  - name: aivault
+    repository:
+      owner: jxherc
+      name: scoop-bucket
+      token: "{{ .Env.TAP_TOKEN }}"
+    homepage: https://github.com/jxherc/ai-vault
+    description: one folder of rules, skills and memory for claude code, codex and opencode
