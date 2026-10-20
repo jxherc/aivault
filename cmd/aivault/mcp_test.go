@@ -9,6 +9,8 @@ func TestClientName(t *testing.T) {
 		"codex-mcp-client":             "codex",
 		"claude-code":                  "claude-code",
 		"opencode":                     "opencode",
+		"pi-mcp-ai-vault":              "pi",
+		"dsh":                          "dsh",
 	} {
 		if got := clientName(in); got != want {
 			t.Errorf("%s: got %s, want %s", in, got, want)

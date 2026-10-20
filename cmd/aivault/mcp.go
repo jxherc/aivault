@@ -29,10 +29,11 @@ type rememberOut struct {
 }
 
 // "gemini-cli-mcp-client" -> "gemini", "qwen-cli-mcp-client-ai-vault" -> "qwen",
-// "codex-mcp-client" -> "codex". anything else stays as the client sent it
+// "codex-mcp-client" -> "codex", "pi-mcp-ai-vault" -> "pi". anything else
+// stays as the client sent it
 func clientName(n string) string {
 	n = strings.ToLower(n)
-	if i := strings.Index(n, "-mcp-client"); i > 0 {
+	if i := strings.Index(n, "-mcp"); i > 0 {
 		n = n[:i]
 	}
 	return strings.TrimSuffix(n, "-cli")

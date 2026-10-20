@@ -103,20 +103,44 @@ skills get linked into `~/.agents/skills/`, which most of these read. claude cod
 
 on windows, goose, zed and hermes keep config under `%APPDATA%` or `%LOCALAPPDATA%`. aivault follows that, along with the env vars that move these folders (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_CONFIG_HOME`, `GEMINI_CLI_HOME`, `QWEN_HOME`, `KIMI_CODE_HOME`, `DSH_HOME`, `HERMES_HOME`, `PI_CODING_AGENT_DIR`, `CLINE_DIR`, `KILO_CONFIG_DIR`, `CRUSH_GLOBAL_CONFIG`, `GOOSE_PATH_ROOT`, `INTERPRETER_HOME`, `MINIMAX_DATA_DIR`, `KODE_CONFIG_DIR`).
 
-some quirks:
-- ZCode only loads mcp servers when `features.mcp` is on. aivault turns it on if you never set it. if you set it to `false` yourself, it stays off and `doctor` tells you
-- Neovate also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
-- Crush's license (FSL) is source-available, not open source
-- Gemini CLI stopped serving free accounts on 2026-06-18. it still works with an api key
-- Codex blocks mcp calls that aren't approved, and a headless run can't ask. aivault marks its own two tools as approved (`default_tools_approval_mode = "approve"`)
-- Qwen Code tends to save "remember this" into its own memory (`~/.qwen/memories/`) instead of the vault, even when told not to. it still reads the vault rules and searches the vault fine
-- Gemini CLI turns off every mcp server, user-level ones included, in a folder you haven't trusted. the vault rules still load, but `vault_search` only shows up once you trust the folder
-
 left out, and why:
 - iFlow CLI shut down (2026-04-17). Roo Code shut down (2026-05-15). Void is archived
 - Continue, OpenHands CLI and the old Python Kimi CLI aren't maintained anymore
 - Trae Agent only reads a config in the current folder, so there's nothing global to connect
 - Copilot CLI, Cursor CLI, Amp, CodeBuddy and Comate aren't open source. Claude Code isn't either, but it's here because so many people use it
+
+## precautions
+
+aivault wires the vault in. it can't make a model use it. read this before you rely on it.
+
+**nothing here is guaranteed**
+- every connected tool gets the vault rules and the two vault tools, but the model decides when to call `vault_search` and `vault_remember`. the default rules push hard (search before answering anything about you, save whenever you say "remember"), and most models follow them, but some answers will skip the vault
+- tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see edits after `aivault sync`
+- tools load their rules when a session starts. restart them after `init` or `sync`
+- a tool you install after setup isn't connected until you run `aivault init` again
+- search is plain keyword matching, not semantic search. a memory worded differently from the question can be missed
+- `vault_remember` is told never to save secrets, but nothing enforces it. the vault is plain markdown, and it syncs wherever you put it (icloud, dropbox, git), so don't keep keys or passwords in it
+
+**if you already have a setup**
+- check whether another installer or dotfiles script manages the same files (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and so on). aivault adds its own marked block, and a script that guards those files may refuse its next run or overwrite the block. retire it or exclude those files first
+- back up first. `aivault remove` undoes aivault's own changes, but it can't know what another tool did before or after
+- `init --import` moves rules text and skill folders. it leaves skills alone when they're links to somewhere else, or when a different skill already has the same name. read what it prints
+
+**per tool**
+- **OpenCode**: if your `opencode.json` has a skill allowlist (`"permission": {"skill": {"*": "deny", ...}}`), vault skills not on that list stay blocked. add them or loosen the rule. OpenCode also reads `~/.claude/skills` and `~/.agents/skills`, so it can list a skill twice
+- **Codex**: it blocks mcp calls nobody approved, and a headless run can't ask, so aivault pre-approves its own two tools (`default_tools_approval_mode = "approve"`). Codex also stops reading instructions at 32 KB. if your rules are bigger, raise `project_doc_max_bytes` in `~/.codex/config.toml`. `doctor` follows that setting
+- **Gemini CLI**: every mcp server is off in a folder you haven't trusted, user-level ones included. the vault rules still load, but `vault_search` only shows up once you trust the folder. if you route it through a proxy, Gemini CLI also calls its own built-in model names, which the proxy has to know
+- **Qwen Code**: "remember this" tends to land in Qwen's own memory (`~/.qwen/memories/`) instead of the vault, even when the rules say otherwise. reading rules and searching the vault work
+- **Hermes Agent**: `SOUL.md` is its only global file, so the vault rules go there next to its persona
+- **ZCode** only loads mcp servers when `features.mcp` is on. aivault turns it on only if you never set it. your own `false` stays, and `doctor` tells you
+- **Neovate** also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
+- **DeepSeek Harness**: `~/.dsh/cordis.patch.yml` must stay a yaml list. aivault refuses to edit it otherwise
+- **Crush**'s license (FSL) is source-available, not open source
+- **Gemini CLI** stopped serving free accounts on 2026-06-18. it still works with an api key
+- a vault path with spaces (like icloud's `Mobile Documents`) works for Claude Code's imports. Gemini and Qwen get a copy instead of an import, so run `sync` after edits there too
+- on windows, skill links fall back to copies when links aren't allowed. run `sync` after changing skills
+
+**what was tested for real** (2026-10-20, prompts that never mention the vault): Claude Code, Codex, OpenCode, Pi and DeepSeek Harness each answered from the vault rules, found a fact that only existed in a vault memory, and saved a new memory. Qwen Code passed the first two. the other tools are checked by unit tests and their own `mcp list` where installed, not by live model runs
 
 ## what it changes
 
