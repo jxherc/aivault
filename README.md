@@ -97,3 +97,7 @@ go run ./cmd/aivault
 releases: push a tag like `v0.1.0`. the release workflow runs goreleaser, which builds every platform, makes the github release and updates the brew cask and scoop manifest. it needs a `TAP_TOKEN` secret that can write to `jxherc/homebrew-tap` and `jxherc/scoop-bucket`. try it locally with `goreleaser release --snapshot --clean`.
 
 see [SPEC.md](SPEC.md) for the v1 plan.
+
+## license
+
+MIT, see [LICENSE](LICENSE).

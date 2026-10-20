@@ -19,6 +19,7 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
+      - LICENSE
 
 release:
   github:
@@ -60,3 +61,4 @@ scoops:
       token: "{{ .Env.TAP_TOKEN }}"
     homepage: https://github.com/jxherc/aivault
     description: one folder of rules, skills and memory for claude code, codex and opencode
+    license: MIT
