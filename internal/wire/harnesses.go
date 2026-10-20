@@ -182,7 +182,7 @@ var oiDir = homeDir("INTERPRETER_HOME", ".openinterpreter")
 var openInterpreter = build(&spec{
 	name: "interpreter", label: "Open Interpreter", bins: []string{"interpreter"},
 	dir:   oiDir,
-	rules: in(oiDir, "AGENTS.md"), rulesHow: rulesCopy, maxRules: codexLimit,
+	rules: in(oiDir, "AGENTS.md"), rulesHow: rulesCopy, maxRules: codexMax(oiDir),
 	skills:  agentsSkills,
 	mcpFile: in(oiDir, "config.toml"), mcpKind: mcpTOML, mcpPath: []string{"mcp_servers", mcpName},
 })

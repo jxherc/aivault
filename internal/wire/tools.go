@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jxherc/aivault/internal/vault"
@@ -127,7 +129,7 @@ var claude = &Tool{
 var codex = build(&spec{
 	name: "codex", label: "Codex", bins: []string{"codex"},
 	dir:   func(e *Env) string { return e.CodexDir },
-	rules: func(e *Env) string { return filepath.Join(e.CodexDir, "AGENTS.md") }, rulesHow: rulesCopy, maxRules: codexLimit,
+	rules: func(e *Env) string { return filepath.Join(e.CodexDir, "AGENTS.md") }, rulesHow: rulesCopy, maxRules: codexMax(func(e *Env) string { return e.CodexDir }),
 	skills:  agentsSkills,
 	mcpFile: func(e *Env) string { return filepath.Join(e.CodexDir, "config.toml") },
 	mcpKind: mcpTOML, mcpPath: []string{"mcp_servers", mcpName},
@@ -143,6 +145,29 @@ var codex = build(&spec{
 })
 
 const codexLimit = 32 * 1024 // codex's project_doc_max_bytes default
+
+var docMaxRe = regexp.MustCompile(`(?m)^\s*project_doc_max_bytes\s*=\s*(\d+)`)
+
+// the limit from config.toml when the user raised it, else codex's default.
+// only top-level keys count, so stop at the first [table]
+func codexMax(dir func(*Env) string) func(*Env) int {
+	return func(e *Env) int {
+		b, _ := read(filepath.Join(dir(e), "config.toml"))
+		top := string(b)
+		if i := strings.Index(top, "\n["); i >= 0 {
+			top = top[:i]
+		}
+		if strings.HasPrefix(top, "[") {
+			top = ""
+		}
+		if m := docMaxRe.FindStringSubmatch(top); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil && n > 0 {
+				return n
+			}
+		}
+		return codexLimit
+	}
+}
 
 func tomlStr(v string) string {
 	b, _ := json.Marshal(v) // json string escapes are valid toml basic strings

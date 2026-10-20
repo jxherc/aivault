@@ -230,3 +230,19 @@ func TestDoctorCatchesProblems(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexMax(t *testing.T) {
+	f := newFake(t)
+	lim := codexMax(func(e *Env) string { return e.CodexDir })
+	if lim(f.e) != codexLimit {
+		t.Fatal("default limit wrong")
+	}
+	put(t, filepath.Join(f.e.CodexDir, "config.toml"), "# raised\nproject_doc_max_bytes = 65536\nmodel = \"x\"\n\n[tools]\nproject_doc_max_bytes = 1\n")
+	if lim(f.e) != 65536 {
+		t.Fatalf("got %d", lim(f.e))
+	}
+	put(t, filepath.Join(f.e.CodexDir, "config.toml"), "[profiles.x]\nproject_doc_max_bytes = 99\n")
+	if lim(f.e) != codexLimit {
+		t.Fatal("a key inside a table must not count")
+	}
+}

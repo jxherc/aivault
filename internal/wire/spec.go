@@ -33,7 +33,7 @@ type spec struct {
 
 	rules    func(e *Env) string // global rules file we write a block into. nil = none
 	rulesHow int
-	maxRules int // bytes the tool stops reading at, 0 = no limit
+	maxRules func(e *Env) int // bytes the tool stops reading at, nil = no limit
 
 	// or: the vault files go into a list in the tool's config
 	list     func(e *Env) string // json file
@@ -321,8 +321,8 @@ func build(sp *spec) *Tool {
 				if want, err := sp.rulesBody(s); err == nil && mdMarks.body(b) != strings.ReplaceAll(strings.Trim(want, "\n"), "\r\n", "\n") {
 					bad = append(bad, p+" has an old copy of the vault rules. run `aivault sync`")
 				}
-				if sp.maxRules > 0 && len(b) > sp.maxRules-1024 {
-					bad = append(bad, fmt.Sprintf("%s is %d bytes, %s stops reading at %d", p, len(b), sp.label, sp.maxRules))
+				if sp.maxRules != nil && len(b) > sp.maxRules(e)-1024 {
+					bad = append(bad, fmt.Sprintf("%s is %d bytes, %s stops reading at %d", p, len(b), sp.label, sp.maxRules(e)))
 				}
 			}
 		}
