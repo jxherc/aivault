@@ -17,7 +17,7 @@ scoop bucket add jxherc https://github.com/jxherc/scoop-bucket
 scoop install aivault
 ```
 
-or with go: `go install github.com/jxherc/ai-vault/cmd/aivault@latest`. binaries for mac, linux and windows are on the releases page.
+or with go: `go install github.com/jxherc/aivault/cmd/aivault@latest`. binaries for mac, linux and windows are on the releases page.
 
 the mac binary isn't signed yet. the brew cask clears the quarantine flag after install so macos doesn't block it.
 

@@ -127,7 +127,7 @@ init offers to move what the tools already have into the vault. moving, not copy
 
 ## shipping
 
-goreleaser (`.goreleaser.yaml`) builds mac, linux and windows for amd64 and arm64. pushing a `v*` tag runs `.github/workflows/release.yml`: tests, then the github release, a homebrew cask in `jxherc/homebrew-tap` and a scoop manifest in `jxherc/scoop-bucket`. homebrew casks, not formulas, because goreleaser marks its formula publisher deprecated. `go install github.com/jxherc/ai-vault/cmd/aivault@latest` works too.
+goreleaser (`.goreleaser.yaml`) builds mac, linux and windows for amd64 and arm64. pushing a `v*` tag runs `.github/workflows/release.yml`: tests, then the github release, a homebrew cask in `jxherc/homebrew-tap` and a scoop manifest in `jxherc/scoop-bucket`. homebrew casks, not formulas, because goreleaser marks its formula publisher deprecated. `go install github.com/jxherc/aivault/cmd/aivault@latest` works too.
 
 the mac binary isn't signed or notarized. the cask strips the quarantine flag after install; apple may stop allowing that, so signing is the real fix later.
 
@@ -143,4 +143,3 @@ the mac binary isn't signed or notarized. the cask strips the quarantine flag af
 ## open questions
 
 - opencode reads skills from both `~/.claude/skills/` and `~/.agents/skills/`, so it may see each vault skill twice. needs a test: if it breaks, skip the claude link for opencode users or set opencode's claude-compat env var.
-- `aivault` is a working command name. pick the real one before the first release.

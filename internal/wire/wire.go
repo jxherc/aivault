@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jxherc/ai-vault/internal/vault"
+	"github.com/jxherc/aivault/internal/vault"
 )
 
 // Apply creates the vault (if needed) and wires each tool. safe to run again:

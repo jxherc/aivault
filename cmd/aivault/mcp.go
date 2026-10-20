@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jxherc/ai-vault/internal/vault"
+	"github.com/jxherc/aivault/internal/vault"
 )
 
 type searchIn struct {

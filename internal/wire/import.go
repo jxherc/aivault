@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jxherc/ai-vault/internal/vault"
+	"github.com/jxherc/aivault/internal/vault"
 )
 
 // import moves what a user already has into the vault: the text of each
