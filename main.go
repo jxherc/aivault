@@ -1,0 +1,283 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+
+	"github.com/charmbracelet/huh"
+	"github.com/mattn/go-isatty"
+
+	"aivault/internal/vault"
+	"aivault/internal/wire"
+)
+
+var version = "dev"
+
+const usage = `aivault: one folder of rules, skills and memory for all your ai tools
+
+  aivault init              set up the vault and connect your tools
+  aivault doctor            check everything is still connected
+  aivault sync              refresh after editing the vault
+  aivault remove [tool...]  disconnect tools (all if none given)
+  aivault search <query>    search memories and skills
+  aivault mcp               the mcp server your tools launch
+  aivault version
+
+tools: claude, codex, opencode
+`
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Print(usage)
+		os.Exit(2)
+	}
+	var err error
+	switch os.Args[1] {
+	case "init":
+		err = cmdInit(os.Args[2:])
+	case "doctor":
+		err = cmdDoctor()
+	case "sync":
+		err = cmdSync()
+	case "remove":
+		err = cmdRemove(os.Args[2:])
+	case "search":
+		err = cmdSearch(os.Args[2:])
+	case "mcp":
+		err = cmdMCP(os.Args[2:])
+	case "version", "--version", "-v":
+		fmt.Println(version)
+	case "help", "--help", "-h":
+		fmt.Print(usage)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", os.Args[1], usage)
+		os.Exit(2)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+func load() (*wire.Env, *wire.State, error) {
+	e, err := wire.DefaultEnv()
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := wire.LoadState(e)
+	return e, s, err
+}
+
+func expand(p, home string) string {
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
+
+func cmdInit(args []string) error {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	yes := fs.Bool("yes", false, "don't ask, use flags and defaults")
+	dir := fs.String("vault", "", "vault folder (default ~/ai-vault)")
+	tools := fs.String("tools", "", "comma list: claude,codex,opencode (default: the ones found)")
+	fs.Parse(args)
+
+	e, s, err := load()
+	if err != nil {
+		return err
+	}
+	vdir := *dir
+	if vdir == "" {
+		vdir = s.Vault
+	}
+	if vdir == "" {
+		vdir = filepath.Join(e.Home, "ai-vault")
+	}
+	found := wire.Detected(e)
+	var picked []string
+	if *tools != "" {
+		for _, t := range strings.Split(*tools, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				picked = append(picked, t)
+			}
+		}
+	} else {
+		picked = found
+	}
+
+	if !*yes {
+		if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+			return errors.New("not a terminal. use `aivault init --yes` with flags")
+		}
+		if err := wizard(e, &vdir, &picked, found); err != nil {
+			return err
+		}
+	}
+	if len(picked) == 0 {
+		return errors.New("no tools picked. install claude code, codex or opencode, or pass --tools")
+	}
+
+	vdir = expand(vdir, e.Home)
+	fmt.Printf("vault: %s\n", vdir)
+	if err := wire.Apply(e, s, vdir, picked, os.Stdout); err != nil {
+		return err
+	}
+	fmt.Println("\ndone. restart your ai tools so they load the vault.")
+	return nil
+}
+
+func wizard(e *wire.Env, vdir *string, picked *[]string, found []string) error {
+	isFound := map[string]bool{}
+	for _, f := range found {
+		isFound[f] = true
+	}
+	var opts []huh.Option[string]
+	for _, t := range wire.All {
+		label := t.Label
+		if !isFound[t.Name] {
+			label += " (not found)"
+		}
+		opts = append(opts, huh.NewOption(label, t.Name).Selected(contains(*picked, t.Name)))
+	}
+	ok := true
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("vault folder").
+				Description("plain markdown. put it in icloud, dropbox or git if you want it on more machines.").
+				Value(vdir),
+			huh.NewMultiSelect[string]().
+				Title("connect these tools").
+				Options(opts...).
+				Value(picked),
+		),
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("apply?").
+				Description("every file gets backed up first. `aivault remove` undoes it.").
+				Affirmative("yes").
+				Negative("no").
+				Value(&ok),
+		),
+	)
+	if err := form.Run(); err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("cancelled, nothing changed")
+	}
+	return nil
+}
+
+func contains(xs []string, x string) bool {
+	for _, y := range xs {
+		if y == x {
+			return true
+		}
+	}
+	return false
+}
+
+func cmdDoctor() error {
+	e, s, err := load()
+	if err != nil {
+		return err
+	}
+	bad := wire.Doctor(e, s)
+	if len(bad) == 0 {
+		fmt.Printf("all good. vault: %s, tools: %s\n", s.Vault, strings.Join(s.Tools, ", "))
+		return nil
+	}
+	for _, b := range bad {
+		fmt.Println("-", b)
+	}
+	return fmt.Errorf("%d problem(s)", len(bad))
+}
+
+func cmdSync() error {
+	e, s, err := load()
+	if err != nil {
+		return err
+	}
+	if s.Vault == "" {
+		return errors.New("nothing is wired yet. run `aivault init`")
+	}
+	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), os.Stdout)
+}
+
+func cmdRemove(args []string) error {
+	e, s, err := load()
+	if err != nil {
+		return err
+	}
+	if len(s.Tools) == 0 {
+		fmt.Println("nothing is wired.")
+		return nil
+	}
+	return wire.Remove(e, s, args, os.Stdout)
+}
+
+func vaultDir(flagVal string) (string, error) {
+	if flagVal != "" {
+		return filepath.Abs(flagVal)
+	}
+	_, s, err := load()
+	if err != nil {
+		return "", err
+	}
+	if s.Vault == "" {
+		return "", errors.New("no vault set up. run `aivault init` or pass --vault")
+	}
+	return s.Vault, nil
+}
+
+func cmdSearch(args []string) error {
+	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	dir := fs.String("vault", "", "vault folder")
+	limit := fs.Int("n", 8, "max results")
+	fs.Parse(args)
+	vd, err := vaultDir(*dir)
+	if err != nil {
+		return err
+	}
+	hits, err := vault.Search(vd, strings.Join(fs.Args(), " "), *limit)
+	if err != nil {
+		return err
+	}
+	if len(hits) == 0 {
+		fmt.Println("nothing found.")
+	}
+	for _, h := range hits {
+		meta := h.Kind
+		if len(h.Tags) > 0 {
+			meta += " [" + strings.Join(h.Tags, ", ") + "]"
+		}
+		if h.From != "" {
+			meta += " from " + h.From
+		}
+		fmt.Printf("%s\n  %s\n  %s\n\n", meta, strings.ReplaceAll(h.Text, "\n", "\n  "), h.Path)
+	}
+	return nil
+}
+
+func cmdMCP(args []string) error {
+	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	dir := fs.String("vault", "", "vault folder (default: the one from init)")
+	fs.Parse(args)
+	vd, err := vaultDir(*dir)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return serveMCP(ctx, vd)
+}
