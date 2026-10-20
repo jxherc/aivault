@@ -108,6 +108,7 @@ some quirks:
 - Neovate also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
 - Crush's license (FSL) is source-available, not open source
 - Gemini CLI stopped serving free accounts on 2026-06-18. it still works with an api key
+- Gemini CLI turns off every mcp server, user-level ones included, in a folder you haven't trusted. the vault rules still load, but `vault_search` only shows up once you trust the folder
 
 left out, and why:
 - iFlow CLI shut down (2026-04-17). Roo Code shut down (2026-05-15). Void is archived

@@ -64,6 +64,9 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 			continue
 		}
 		fmt.Fprintf(out, "  %-9s ok\n", t.Name)
+		if t.Note != "" {
+			fmt.Fprintf(out, "            note: %s\n", t.Note)
+		}
 	}
 	for _, w := range syncLinks(e, s) {
 		fmt.Fprintln(out, "  warning:", w)

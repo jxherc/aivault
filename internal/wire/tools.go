@@ -28,6 +28,7 @@ type Tool struct {
 	Apply     func(e *Env, s *State) error
 	Remove    func(e *Env, s *State) error
 	Check     func(e *Env, s *State) []string
+	Note      string // printed after a successful apply, for things we can't fix for the user
 }
 
 var All = []*Tool{

@@ -11,6 +11,8 @@ import (
 // gemini cli: GEMINI.md expands @imports
 var gemini = build(&spec{
 	name: "gemini", label: "Gemini CLI", bins: []string{"gemini"},
+	// seen on gemini 0.64: in an untrusted folder every mcp server is off, user-level ones too
+	note:  "gemini turns off all mcp servers in folders you haven't trusted. say yes when it asks to trust a folder",
 	dir:   geminiDir,
 	rules: in(geminiDir, "GEMINI.md"), rulesHow: rulesImport,
 	skills:    agentsSkills,
