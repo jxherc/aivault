@@ -244,7 +244,7 @@ var opencode = &Tool{
 	Remove: func(e *Env, s *State) error {
 		// state knows which file we edited, even if a .jsonc showed up later
 		for p := range s.Files {
-			if filepath.Dir(p) == e.OpencodeDir {
+			if b := filepath.Base(p); filepath.Dir(p) == e.OpencodeDir && (b == "opencode.json" || b == "opencode.jsonc") {
 				paths := opencodePaths(s)
 				if err := s.undo(p, func(b []byte) ([]byte, error) { return ocStrip(b, paths) }); err != nil {
 					return err

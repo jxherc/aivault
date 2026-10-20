@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type State struct {
 	Files     map[string]*FileRec `json:"files"`
 	Links     map[string]*LinkRec `json:"links"`
 	ClaudeMCP bool                `json:"claude_mcp,omitempty"`
+	// skills moved into the vault: original path -> where the original sits now
+	Imported map[string]*ImportRec `json:"imported,omitempty"`
 
 	path   string
 	backup string // this run's backup folder, made on first use
@@ -30,6 +33,14 @@ type FileRec struct {
 	Backup  string `json:"backup,omitempty"` // copy of the original
 	Sum     string `json:"sum"`              // sha256 of what we last wrote
 	Sep     string `json:"sep,omitempty"`    // what we put before our block
+	Moved   string `json:"moved,omitempty"`  // text import moved into the vault, put back on undo
+	Link    string `json:"link,omitempty"`   // the file was a symlink to this
+	Tool    string `json:"tool,omitempty"`
+}
+
+type ImportRec struct {
+	Vault  string `json:"vault"`  // copy in the vault
+	Backup string `json:"backup"` // the original folder, moved aside
 }
 
 type LinkRec struct {
@@ -38,7 +49,7 @@ type LinkRec struct {
 }
 
 func LoadState(e *Env) (*State, error) {
-	s := &State{Files: map[string]*FileRec{}, Links: map[string]*LinkRec{}, path: filepath.Join(e.StateDir, "config.json")}
+	s := &State{Files: map[string]*FileRec{}, Links: map[string]*LinkRec{}, Imported: map[string]*ImportRec{}, path: filepath.Join(e.StateDir, "config.json")}
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s, nil
@@ -55,11 +66,14 @@ func LoadState(e *Env) (*State, error) {
 	if s.Links == nil {
 		s.Links = map[string]*LinkRec{}
 	}
+	if s.Imported == nil {
+		s.Imported = map[string]*ImportRec{}
+	}
 	return s, nil
 }
 
 func (s *State) Save() error {
-	if len(s.Tools) == 0 && len(s.Files) == 0 && len(s.Links) == 0 && !s.ClaudeMCP {
+	if len(s.Tools) == 0 && len(s.Files) == 0 && len(s.Links) == 0 && len(s.Imported) == 0 && !s.ClaudeMCP {
 		// nothing wired anymore. keep backups, drop the config
 		err := os.Remove(s.path)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -110,13 +124,15 @@ func (s *State) write(p string, data []byte) error {
 		case err != nil:
 			return err
 		default:
-			if s.backup == "" {
-				s.backup = filepath.Join(filepath.Dir(s.path), "backups", time.Now().Format("20060102-150405"))
+			if fi, err := os.Lstat(p); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+				// we replace the link with a file. undo puts the link back
+				rec.Link, _ = os.Readlink(p)
 			}
-			bp := filepath.Join(s.backup, fmt.Sprintf("%d-%s", len(s.Files), filepath.Base(p)))
-			if err := os.MkdirAll(s.backup, 0o755); err != nil {
+			bdir, err := s.backupDir()
+			if err != nil {
 				return err
 			}
+			bp := filepath.Join(bdir, fmt.Sprintf("%d-%s", len(s.Files), filepath.Base(p)))
 			if err := os.WriteFile(bp, orig, 0o600); err != nil {
 				return err
 			}
@@ -129,6 +145,14 @@ func (s *State) write(p string, data []byte) error {
 	}
 	rec.Sum = sum(data)
 	return nil
+}
+
+// this run's backup folder
+func (s *State) backupDir() (string, error) {
+	if s.backup == "" {
+		s.backup = filepath.Join(filepath.Dir(s.path), "backups", time.Now().Format("20060102-150405"))
+	}
+	return s.backup, os.MkdirAll(s.backup, 0o755)
 }
 
 // undo takes our change out of p. if nobody touched the file since our last
@@ -149,6 +173,13 @@ func (s *State) undo(p string, strip func([]byte) ([]byte, error)) error {
 		if err := os.Remove(p); err != nil {
 			return err
 		}
+	case sum(cur) == rec.Sum && rec.Link != "":
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		if err := os.Symlink(rec.Link, p); err != nil {
+			return err
+		}
 	case sum(cur) == rec.Sum && rec.Backup != "":
 		orig, err := os.ReadFile(rec.Backup)
 		if err != nil {
@@ -161,6 +192,14 @@ func (s *State) undo(p string, strip func([]byte) ([]byte, error)) error {
 		out, err := strip(cur)
 		if err != nil {
 			return err
+		}
+		if rec.Moved != "" {
+			// the user edited the file since, so keep their edits and put the moved text back on top
+			rest := strings.TrimLeft(string(out), "\r\n")
+			out = []byte(rec.Moved)
+			if rest != "" {
+				out = append(out, []byte("\n\n"+rest)...)
+			}
 		}
 		if rec.Created && len(out) == 0 {
 			err = os.Remove(p)

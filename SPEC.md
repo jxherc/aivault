@@ -113,6 +113,14 @@ no delete over mcp. an agent shouldn't be able to wipe memories on its own; dele
 - write files with a temp file + rename so a crash never leaves half a config.
 - keep the user's line endings when editing a file.
 
+## import
+
+init offers to move what the tools already have into the vault. moving, not copying: if the old text stayed in `CLAUDE.md`, every tool would load the rules twice, and edits in the vault would fight the stale copy.
+
+- rules: the text outside our block in each tool's global rules file goes into `me.md` under `## from <tool>`. same text in two files (or two files linked together) is added once. relative `@file` imports that point at real files become absolute
+- skills: real folders with a SKILL.md get copied into the vault, the original moves to the backup folder, and sync puts a link in its place. links into another scanned skills folder are followed so a skill isn't imported twice. links to anywhere else are left alone. same name + same files = one skill; same name + different files = skipped
+- undo: if the rules file wasn't edited since, the backup comes back byte for byte. if it was, our block comes out and the moved text goes back on top. skill folders move back wherever no link of ours sits anymore
+
 ## state
 
 `~/.aivault/config.json` holds the vault path, which tools are wired, and what was changed in each. backups sit next to it. that's all the cli remembers.
@@ -133,5 +141,4 @@ goreleaser builds mac (arm64, amd64), linux (arm64, amd64) and windows (amd64, a
 ## open questions
 
 - opencode reads skills from both `~/.claude/skills/` and `~/.agents/skills/`, so it may see each vault skill twice. needs a test: if it breaks, skip the claude link for opencode users or set opencode's claude-compat env var.
-- import on first run: pull the user's existing `CLAUDE.md` / `AGENTS.md` into `me.md` as-is, or ask per section? as-is is simpler; i'd start there.
 - `aivault` is a working command name. pick the real one before the first release.

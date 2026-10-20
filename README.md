@@ -17,6 +17,16 @@ init asks where to keep the vault (default `~/ai-vault`) and which tools to conn
 aivault init --yes --vault ~/ai-vault --tools claude,codex,opencode
 ```
 
+## bringing in what you already have
+
+if your tools already have rules or skills, init offers to move them into the vault (`--import` in scripts, or `aivault import` later):
+
+- the text of `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and `~/.config/opencode/AGENTS.md` goes into `me.md`, one section per tool. identical text is only added once. relative `@file` imports get turned into full paths so they still work from the vault
+- skill folders from `~/.claude/skills/`, `~/.agents/skills/` and `~/.config/opencode/skills/` move to `skills/`, and a link takes their old place. identical copies count as one skill
+- skills that are links to some other folder stay where they are. so does a skill whose name is already taken by a different one
+
+the tool files end up holding only the ai vault block. `aivault remove` puts the old text and skill folders back; the vault keeps its copies. if the rules from all your tools add up past codex's 32 KB limit, init warns you so you can trim `me.md`.
+
 ## what's in the vault
 
 ```
@@ -36,6 +46,7 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 | `aivault init` | set up the vault and connect tools |
 | `aivault doctor` | check everything is still connected |
 | `aivault sync` | run after editing the vault (codex keeps a copy of the rules) |
+| `aivault import` | move existing rules and skills into the vault |
 | `aivault remove [tool...]` | disconnect tools, all of them if none named |
 | `aivault search <query>` | search memories and skills |
 | `aivault mcp` | the mcp server the tools launch |

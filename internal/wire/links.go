@@ -44,12 +44,13 @@ func syncLinks(e *Env, s *State) []string {
 		delete(s.Links, p)
 	}
 
+	var taken []string
 	for p, target := range want {
 		if rec, ok := s.Links[p]; ok && rec.Target == target {
 			continue
 		}
 		if _, err := os.Lstat(p); err == nil {
-			warn = append(warn, fmt.Sprintf("skipped skill %s: %s already exists and isn't ours", filepath.Base(p), p))
+			taken = append(taken, p)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -62,6 +63,16 @@ func syncLinks(e *Env, s *State) []string {
 			continue
 		}
 		s.Links[p] = &LinkRec{Target: target, Copied: copied}
+	}
+	// something already sits there. fine if it's the user's own link that ends
+	// up at the vault skill anyway (checked last, since it may go through a link we just made)
+	for _, p := range taken {
+		real, err := filepath.EvalSymlinks(p)
+		goal, _ := filepath.EvalSymlinks(want[p])
+		if err == nil && real == goal {
+			continue
+		}
+		warn = append(warn, fmt.Sprintf("skipped skill %s: %s already exists and isn't ours", filepath.Base(p), p))
 	}
 	return warn
 }

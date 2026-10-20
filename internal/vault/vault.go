@@ -210,3 +210,18 @@ func frontmatter(s string) (map[string]string, string) {
 	rest := s[4+end+4:]
 	return fm, strings.TrimPrefix(rest, "\n")
 }
+
+// AddToMe appends text to me.md. if me.md is still our starter text, the
+// starter goes away so the file is just the user's stuff
+func AddToMe(dir, text string) error {
+	p := filepath.Join(dir, "me.md")
+	b, err := os.ReadFile(p)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	cur := strings.TrimRight(string(b), "\r\n")
+	if string(b) == defaultMe || cur == "" {
+		cur = "# me"
+	}
+	return os.WriteFile(p, []byte(cur+"\n\n"+strings.TrimSpace(text)+"\n"), 0o644)
+}

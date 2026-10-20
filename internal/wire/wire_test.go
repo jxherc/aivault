@@ -108,7 +108,7 @@ func TestApplyRemoveRestoresFiles(t *testing.T) {
 	put(t, filepath.Join(vdir, "skills", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: ship it\n---\nsteps\n")
 
 	s, _ := LoadState(e)
-	if err := Apply(e, s, vdir, []string{"claude", "codex", "opencode"}, io.Discard); err != nil {
+	if err := Apply(e, s, vdir, []string{"claude", "codex", "opencode"}, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +140,7 @@ func TestApplyRemoveRestoresFiles(t *testing.T) {
 	// running again changes no file
 	before := get(t, claudeMD) + get(t, codexMD) + get(t, codexCfg) + get(t, ocCfg)
 	s2, _ := LoadState(e)
-	if err := Apply(e, s2, vdir, s2.Tools, io.Discard); err != nil {
+	if err := Apply(e, s2, vdir, s2.Tools, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if after := get(t, claudeMD) + get(t, codexMD) + get(t, codexCfg) + get(t, ocCfg); after != before {
@@ -180,7 +180,7 @@ func TestRemoveAfterUserEdits(t *testing.T) {
 	vdir := filepath.Join(e.Home, "v")
 
 	s, _ := LoadState(e)
-	if err := Apply(e, s, vdir, []string{"claude", "opencode"}, io.Discard); err != nil {
+	if err := Apply(e, s, vdir, []string{"claude", "opencode"}, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	// user adds lines after our block, and opencode gets another setting
@@ -204,7 +204,7 @@ func TestCodexRefusesDuplicateTable(t *testing.T) {
 	f := newFake(t)
 	put(t, filepath.Join(f.e.CodexDir, "config.toml"), "[mcp_servers.ai-vault]\ncommand = \"old\"\n")
 	s, _ := LoadState(f.e)
-	if err := Apply(f.e, s, filepath.Join(f.e.Home, "v"), []string{"codex"}, io.Discard); err == nil {
+	if err := Apply(f.e, s, filepath.Join(f.e.Home, "v"), []string{"codex"}, false, io.Discard); err == nil {
 		t.Fatal("expected an error for a duplicate mcp table")
 	}
 }
@@ -215,7 +215,7 @@ func TestDoctorCatchesProblems(t *testing.T) {
 	vdir := filepath.Join(e.Home, "v")
 	put(t, filepath.Join(vdir, "skills", "a", "SKILL.md"), "---\ndescription: a\n---\n")
 	s, _ := LoadState(e)
-	if err := Apply(e, s, vdir, []string{"claude", "codex"}, io.Discard); err != nil {
+	if err := Apply(e, s, vdir, []string{"claude", "codex"}, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	put(t, filepath.Join(e.CodexDir, "AGENTS.override.md"), "other rules\n")

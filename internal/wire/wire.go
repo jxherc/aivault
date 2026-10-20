@@ -13,7 +13,8 @@ import (
 // Apply creates the vault (if needed) and wires each tool. safe to run again:
 // that's also what sync does. warnings are things the user should know but
 // that didn't stop the run
-func Apply(e *Env, s *State, vaultDir string, tools []string, out io.Writer) error {
+// imp = first move the tools' existing rules and skills into the vault
+func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.Writer) error {
 	abs, err := filepath.Abs(vaultDir)
 	if err != nil {
 		return err
@@ -25,6 +26,21 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, out io.Writer) err
 		return err
 	}
 	s.Vault = abs
+
+	for _, name := range tools {
+		if Find(name) == nil {
+			return fmt.Errorf("unknown tool %q (know: claude, codex, opencode)", name)
+		}
+	}
+	if imp {
+		f, err := Scan(e, s, abs, tools)
+		if err != nil {
+			return err
+		}
+		if err := Import(e, s, f, tools, out); err != nil {
+			return err
+		}
+	}
 
 	var failed []string
 	for _, name := range tools {
@@ -75,7 +91,14 @@ func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 			fmt.Fprintf(out, "  %-9s wasn't wired\n", name)
 			continue
 		}
-		if err := t.Remove(e, s); err != nil {
+		err := t.Remove(e, s)
+		// rules files that import emptied and the tool's own wiring doesn't cover
+		for p, rec := range s.Files {
+			if err == nil && rec.Tool == name && rec.Moved != "" {
+				err = unBlock(s, p, mdMarks)
+			}
+		}
+		if err != nil {
 			fmt.Fprintf(out, "  %-9s problem: %v\n", name, err)
 			errs = append(errs, name)
 		} else {
@@ -90,7 +113,7 @@ func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 		}
 		s.Tools = keep
 	}
-	for _, w := range syncLinks(e, s) {
+	for _, w := range append(syncLinks(e, s), restoreSkills(s)...) {
 		fmt.Fprintln(out, "  warning:", w)
 	}
 	if len(s.Tools) == 0 {

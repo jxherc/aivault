@@ -24,6 +24,7 @@ const usage = `aivault: one folder of rules, skills and memory for all your ai t
   aivault init              set up the vault and connect your tools
   aivault doctor            check everything is still connected
   aivault sync              refresh after editing the vault
+  aivault import            move existing rules and skills into the vault
   aivault remove [tool...]  disconnect tools (all if none given)
   aivault search <query>    search memories and skills
   aivault mcp               the mcp server your tools launch
@@ -45,6 +46,8 @@ func main() {
 		err = cmdDoctor()
 	case "sync":
 		err = cmdSync()
+	case "import":
+		err = cmdImport(os.Args[2:])
 	case "remove":
 		err = cmdRemove(os.Args[2:])
 	case "search":
@@ -89,6 +92,7 @@ func cmdInit(args []string) error {
 	yes := fs.Bool("yes", false, "don't ask, use flags and defaults")
 	dir := fs.String("vault", "", "vault folder (default ~/ai-vault)")
 	tools := fs.String("tools", "", "comma list: claude,codex,opencode (default: the ones found)")
+	imp := fs.Bool("import", false, "move the tools' existing rules and skills into the vault")
 	fs.Parse(args)
 
 	e, s, err := load()
@@ -118,7 +122,7 @@ func cmdInit(args []string) error {
 		if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
 			return errors.New("not a terminal. use `aivault init --yes` with flags")
 		}
-		if err := wizard(e, &vdir, &picked, found); err != nil {
+		if err := wizard(e, s, &vdir, &picked, found, imp); err != nil {
 			return err
 		}
 	}
@@ -128,14 +132,14 @@ func cmdInit(args []string) error {
 
 	vdir = expand(vdir, e.Home)
 	fmt.Printf("vault: %s\n", vdir)
-	if err := wire.Apply(e, s, vdir, picked, os.Stdout); err != nil {
+	if err := wire.Apply(e, s, vdir, picked, *imp, os.Stdout); err != nil {
 		return err
 	}
 	fmt.Println("\ndone. restart your ai tools so they load the vault.")
 	return nil
 }
 
-func wizard(e *wire.Env, vdir *string, picked *[]string, found []string) error {
+func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []string, imp *bool) error {
 	isFound := map[string]bool{}
 	for _, f := range found {
 		isFound[f] = true
@@ -148,28 +152,50 @@ func wizard(e *wire.Env, vdir *string, picked *[]string, found []string) error {
 		}
 		opts = append(opts, huh.NewOption(label, t.Name).Selected(contains(*picked, t.Name)))
 	}
+	err := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("vault folder").
+			Description("plain markdown. put it in icloud, dropbox or git if you want it on more machines.").
+			Value(vdir),
+		huh.NewMultiSelect[string]().
+			Title("connect these tools").
+			Options(opts...).
+			Value(picked),
+	)).Run()
+	if err != nil {
+		return err
+	}
+	if len(*picked) == 0 {
+		return nil
+	}
+
+	// second screen: offer import if the picked tools already have stuff
+	abs, err := filepath.Abs(expand(*vdir, e.Home))
+	if err != nil {
+		return err
+	}
+	f, err := wire.Scan(e, s, abs, *picked)
+	if err != nil {
+		return err
+	}
+	var fields []huh.Field
+	if !f.Empty() {
+		*imp = true
+		fields = append(fields, huh.NewConfirm().
+			Title("move what you already have into the vault?").
+			Description("found "+strings.Join(f.Summary(e.Home), ", ")+".\nyour rules go into me.md, skills into skills/. originals are backed up and `aivault remove` puts them back.").
+			Affirmative("move them").
+			Negative("leave them").
+			Value(imp))
+	}
 	ok := true
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("vault folder").
-				Description("plain markdown. put it in icloud, dropbox or git if you want it on more machines.").
-				Value(vdir),
-			huh.NewMultiSelect[string]().
-				Title("connect these tools").
-				Options(opts...).
-				Value(picked),
-		),
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("apply?").
-				Description("every file gets backed up first. `aivault remove` undoes it.").
-				Affirmative("yes").
-				Negative("no").
-				Value(&ok),
-		),
-	)
-	if err := form.Run(); err != nil {
+	fields = append(fields, huh.NewConfirm().
+		Title("apply?").
+		Description("every file gets backed up first. `aivault remove` undoes it.").
+		Affirmative("yes").
+		Negative("no").
+		Value(&ok))
+	if err := huh.NewForm(huh.NewGroup(fields...)).Run(); err != nil {
 		return err
 	}
 	if !ok {
@@ -211,7 +237,45 @@ func cmdSync() error {
 	if s.Vault == "" {
 		return errors.New("nothing is wired yet. run `aivault init`")
 	}
-	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), os.Stdout)
+	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), false, os.Stdout)
+}
+
+func cmdImport(args []string) error {
+	fs := flag.NewFlagSet("import", flag.ExitOnError)
+	yes := fs.Bool("yes", false, "don't ask")
+	fs.Parse(args)
+	e, s, err := load()
+	if err != nil {
+		return err
+	}
+	if s.Vault == "" {
+		return errors.New("nothing is wired yet. run `aivault init`")
+	}
+	f, err := wire.Scan(e, s, s.Vault, s.Tools)
+	if err != nil {
+		return err
+	}
+	if f.Empty() {
+		fmt.Println("nothing to import.")
+		return nil
+	}
+	fmt.Println("found", strings.Join(f.Summary(e.Home), ", "))
+	if !*yes {
+		ok := true
+		err := huh.NewConfirm().
+			Title("move them into the vault?").
+			Description("originals are backed up and `aivault remove` puts them back.").
+			Affirmative("move them").
+			Negative("leave them").
+			Value(&ok).Run()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("cancelled, nothing changed")
+		}
+	}
+	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, os.Stdout)
 }
 
 func cmdRemove(args []string) error {
