@@ -87,6 +87,32 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 	return nil
 }
 
+// RefreshRules redoes every wired tool's copy or list of the rules files and
+// nothing else (no mcp, no skills). for when a rules file changed or was added
+// between syncs
+func RefreshRules(e *Env, s *State) error {
+	if s.Vault == "" {
+		return nil
+	}
+	var errs []string
+	for _, name := range s.Tools {
+		t := Find(name)
+		if t == nil || t.Refresh == nil {
+			continue
+		}
+		if err := t.Refresh(e, s); err != nil {
+			errs = append(errs, name+": "+err.Error())
+		}
+	}
+	if err := s.Save(); err != nil {
+		return err
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("couldn't refresh %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 // Remove unwires the given tools, or all of them when tools is empty
 func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 	if len(tools) == 0 {

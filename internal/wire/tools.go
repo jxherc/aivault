@@ -35,6 +35,9 @@ type Tool struct {
 	Memories func(e *Env) []memSrc
 	// things worth knowing that aren't errors, shown by init and doctor
 	Hints func(e *Env, s *State) []string
+	// rewrite only the rules, after a vault rules file changed. nil = the
+	// tool reads the vault files itself, nothing to do
+	Refresh func(e *Env, s *State) error
 }
 
 var All = []*Tool{
@@ -80,12 +83,7 @@ var claude = &Tool{
 	},
 	Skills: func(e *Env) string { return filepath.Join(e.ClaudeDir, "skills") },
 	Apply: func(e *Env, s *State) error {
-		p := filepath.Join(e.ClaudeDir, "CLAUDE.md")
-		var lines []string
-		for _, f := range vault.RulesFiles(s.Vault) {
-			lines = append(lines, claudeImport(f))
-		}
-		if err := setBlock(s, p, mdMarks, strings.Join(lines, "\n")); err != nil {
+		if err := setBlock(s, filepath.Join(e.ClaudeDir, "CLAUDE.md"), mdMarks, claudeRules(s)); err != nil {
 			return err
 		}
 		if !e.Has("claude") {
@@ -97,6 +95,9 @@ var claude = &Tool{
 		}
 		s.ClaudeMCP = true
 		return nil
+	},
+	Refresh: func(e *Env, s *State) error {
+		return setBlock(s, filepath.Join(e.ClaudeDir, "CLAUDE.md"), mdMarks, claudeRules(s))
 	},
 	Remove: func(e *Env, s *State) error {
 		if err := unBlock(s, filepath.Join(e.ClaudeDir, "CLAUDE.md"), mdMarks); err != nil {
@@ -189,6 +190,14 @@ func tomlStr(v string) string {
 }
 
 // shared helpers for marker blocks
+
+func claudeRules(s *State) string {
+	var lines []string
+	for _, f := range vault.RulesFiles(s.Vault) {
+		lines = append(lines, claudeImport(f))
+	}
+	return strings.Join(lines, "\n")
+}
 
 func setBlock(s *State, p string, m marks, body string) error {
 	b, err := read(p)

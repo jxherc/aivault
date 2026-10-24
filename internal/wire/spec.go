@@ -115,10 +115,16 @@ func vaultPaths(s *State) []string {
 	return paths
 }
 
+// the vault paths in a json list. Prefix lets a later run drop a path whose
+// file was deleted from the vault
+func (sp *spec) listOp(s *State) jsonOp {
+	return jsonOp{Path: sp.listPath, List: vaultPaths(s), Prefix: filepath.ToSlash(s.Vault) + "/"}
+}
+
 func (sp *spec) jsonOps(e *Env, s *State) map[string][]jsonOp {
 	ops := map[string][]jsonOp{}
 	if sp.list != nil {
-		ops[sp.list(e)] = append(ops[sp.list(e)], jsonOp{Path: sp.listPath, List: vaultPaths(s)})
+		ops[sp.list(e)] = append(ops[sp.list(e)], sp.listOp(s))
 	}
 	if sp.mcpKind == mcpJSON {
 		f := sp.mcpFile(e)
@@ -214,6 +220,28 @@ func build(sp *spec) *Tool {
 		return nil
 	}
 
+	// everything that lists or copies the rules files, nothing else
+	t.Refresh = func(e *Env, s *State) error {
+		if sp.rules != nil {
+			body, err := sp.rulesBody(s)
+			if err != nil {
+				return err
+			}
+			if err := setBlock(s, sp.rules(e), mdMarks, body); err != nil {
+				return err
+			}
+		}
+		if sp.list != nil {
+			f := sp.list(e)
+			if err := applyJSON(s, map[string][]jsonOp{f: {sp.listOp(s)}}); err != nil {
+				return err
+			}
+		}
+		if sp.ylist != nil {
+			return applyYAML(s, map[string]yamlEdit{sp.ylist(e): {sp.ylistKey, yamlItems(vaultPaths(s))}})
+		}
+		return nil
+	}
 	t.Apply = func(e *Env, s *State) error {
 		if sp.rules != nil {
 			body, err := sp.rulesBody(s)
@@ -224,43 +252,11 @@ func build(sp *spec) *Tool {
 				return err
 			}
 		}
-		for f, ops := range sp.jsonOps(e, s) {
-			b, err := read(f)
-			if err != nil {
-				return err
-			}
-			out, added, err := jsonApply(b, ops)
-			if err != nil {
-				return fmt.Errorf("can't edit %s: %w", f, err)
-			}
-			if !bytes.Equal(out, b) {
-				if err := s.write(f, out); err != nil {
-					return err
-				}
-				for _, a := range added {
-					if !hasStr(s.Files[f].Added, a) {
-						s.Files[f].Added = append(s.Files[f].Added, a)
-					}
-				}
-			}
+		if err := applyJSON(s, sp.jsonOps(e, s)); err != nil {
+			return err
 		}
-		for f, y := range sp.yamlEdits(e, s) {
-			b, err := read(f)
-			if err != nil {
-				return err
-			}
-			out, orig, err := yamlSet(b, y.key, y.child)
-			if err != nil {
-				return fmt.Errorf("%s: %w", f, err)
-			}
-			if !bytes.Equal(out, b) {
-				if err := s.write(f, out); err != nil {
-					return err
-				}
-				if orig != "" {
-					s.Files[f].Line = orig
-				}
-			}
+		if err := applyYAML(s, sp.yamlEdits(e, s)); err != nil {
+			return err
 		}
 		if sp.mcpKind == mcpTOML {
 			f := sp.mcpFile(e)
@@ -364,4 +360,50 @@ func build(sp *spec) *Tool {
 		return bad
 	}
 	return t
+}
+
+func applyJSON(s *State, ops map[string][]jsonOp) error {
+	for f, ops := range ops {
+		b, err := read(f)
+		if err != nil {
+			return err
+		}
+		out, added, err := jsonApply(b, ops)
+		if err != nil {
+			return fmt.Errorf("can't edit %s: %w", f, err)
+		}
+		if !bytes.Equal(out, b) {
+			if err := s.write(f, out); err != nil {
+				return err
+			}
+			for _, a := range added {
+				if !hasStr(s.Files[f].Added, a) {
+					s.Files[f].Added = append(s.Files[f].Added, a)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func applyYAML(s *State, edits map[string]yamlEdit) error {
+	for f, y := range edits {
+		b, err := read(f)
+		if err != nil {
+			return err
+		}
+		out, orig, err := yamlSet(b, y.key, y.child)
+		if err != nil {
+			return fmt.Errorf("%s: %w", f, err)
+		}
+		if !bytes.Equal(out, b) {
+			if err := s.write(f, out); err != nil {
+				return err
+			}
+			if orig != "" {
+				s.Files[f].Line = orig
+			}
+		}
+	}
+	return nil
 }

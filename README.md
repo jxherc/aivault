@@ -59,9 +59,13 @@ the tool files end up holding only the ai vault block. `aivault remove` puts the
 ai-vault/
   AGENTS.md     rules every tool loads
   me.md         your preferences
+  *.md          any other file you put here loads too (say remember.md, mistakes.md)
+  index/        lookup lists, searched line by line (where your files are, what your nicknames mean)
   memory/       one .md file per memory
   skills/       <name>/SKILL.md
 ```
+
+every `.md` at the top of the vault is part of the rules every tool loads: AGENTS.md, then me.md, then the rest a to z. keep them short, since every tool reads all of them every session. bigger lists belong in `index/`: `vault_search` returns the single matching line from them, with the headings above it, so a 300-line list of your files still answers "my chem module 4 worksheet" with one path.
 
 it's plain markdown, so obsidian or any editor works. to use it on more than one machine, put the folder in icloud, dropbox, syncthing or a git repo.
 
@@ -74,7 +78,7 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 | `aivault sync` | refresh every tool after editing the vault, and pull in anything new from them (rules text, skills, their own memories) |
 | `aivault import` | move existing rules and skills into the vault |
 | `aivault remove [tool...]` | disconnect tools, all of them if none named |
-| `aivault search <query>` | search memories and skills |
+| `aivault search <query>` | search memories, skills and `index/` lists |
 | `aivault mcp` | the mcp server the tools launch |
 
 ## supported tools
@@ -123,12 +127,13 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 
 **nothing here is guaranteed**
 - every connected tool gets the vault rules and the two vault tools, but the model decides when to call `vault_search` and `vault_remember`. the default rules push hard (search before answering anything about you, save whenever you say "remember"), and most models follow them, but some answers will skip the vault
-- tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see edits after `aivault sync`
+- tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see your own edits after `aivault sync`. a line added with `vault_remember` and `file` updates their copies right away
+- every top-level vault file goes into every tool's context. a big one costs tokens in every session and can push a tool over its size limit (Codex's is 32 KB by default). `doctor` warns about Codex
 - tools load their rules when a session starts. restart them after `init` or `sync`
 - a tool you install after setup isn't connected until you run `aivault init` again
 - a memory a tool saves in its own memory reaches the vault at the next `aivault sync`, not right away. nothing runs sync for you
 - search is plain keyword matching, not semantic search. a memory worded differently from the question can be missed
-- `vault_remember` is told never to save secrets, but nothing enforces it. the vault is plain markdown, and it syncs wherever you put it (icloud, dropbox, git), so don't keep keys or passwords in it
+- `vault_remember` refuses text that looks like a password or key, but that check only catches obvious shapes. the vault is plain markdown, and it syncs wherever you put it (icloud, dropbox, git), so don't keep keys or passwords in it
 
 **if you already have a setup**
 - check whether another installer or dotfiles script manages the same files (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and so on). aivault adds its own marked block, and a script that guards those files may refuse its next run or overwrite the block. retire it or exclude those files first
@@ -159,8 +164,8 @@ only text it marks as its own (or, in json files, its own keys), and it backs up
 
 ## agents get two tools
 
-- `vault_search`: finds memories and skills by keyword
-- `vault_remember`: saves one memory, tagged with which tool saved it
+- `vault_search`: finds memories, skills and `index/` lines by keyword
+- `vault_remember`: saves one memory, tagged with which tool saved it. with `file` (say `remember` or `mistakes`), it also adds the line to that vault file, top level or `index/`. the file has to exist already, so a typo can't make a new file every tool then loads. a tool that can't pass `file` can start the text with the file name instead (`remember: ...`). it refuses text that looks like a password or key
 
 there's no delete over mcp on purpose. delete memory files yourself.
 

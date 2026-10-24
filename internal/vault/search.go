@@ -1,13 +1,15 @@
 package vault
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
 )
 
 type Hit struct {
-	Kind    string   `json:"kind"` // memory or skill
+	Kind    string   `json:"kind"` // memory, skill or index
 	Path    string   `json:"path"`
 	Text    string   `json:"text"`
 	Tags    []string `json:"tags,omitempty"`
@@ -30,7 +32,9 @@ func words(s string) []string {
 }
 
 // Search is plain word matching. empty query = newest memories.
-// me.md and AGENTS.md aren't searched since every tool already has them loaded
+// the rules files aren't searched since every tool already has them loaded.
+// index/*.md are lookup lists (where files are, what names mean): each bullet
+// is its own hit, so a big list still answers with the one line that matters
 func Search(dir, query string, limit int) ([]Hit, error) {
 	if limit <= 0 {
 		limit = 8
@@ -60,6 +64,15 @@ func Search(dir, query string, limit int) ([]Hit, error) {
 			hits = append(hits, h)
 		}
 	}
+	if len(q) > 0 {
+		for _, e := range indexEntries(dir) {
+			h := Hit{Kind: "index", Path: e.path, Text: e.text}
+			h.score = score(q, e.text, e.head)
+			if h.score > 0 {
+				hits = append(hits, h)
+			}
+		}
+	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].score != hits[j].score {
 			return hits[i].score > hits[j].score
@@ -78,26 +91,102 @@ func Search(dir, query string, limit int) ([]Hit, error) {
 	return hits, nil
 }
 
-// each query word found in body = 1 per hit, in tags/name = 3. words that match
-// nothing don't sink a doc, so "commit rules please" still finds commit stuff
+// how many of the query words a doc has decides the order: a short line with
+// "chemistry", "module" and "worksheet" beats a long note that says
+// "module" forty times. tags/name count extra, repeats only break ties
 func score(q []string, body, tags string) int {
 	if len(q) == 0 {
 		return 0
 	}
 	bw := words(body)
 	tw := words(tags)
-	n := 0
+	match := func(w, b string) bool { return b == w || (len(w) > 3 && strings.HasPrefix(b, w)) }
+	n, extra := 0, 0
 	for _, w := range q {
+		found := 0
 		for _, b := range bw {
-			if b == w || (len(w) > 3 && strings.HasPrefix(b, w)) {
-				n++
+			if match(w, b) {
+				found++
 			}
 		}
+		inTags := false
 		for _, t := range tw {
-			if t == w || (len(w) > 3 && strings.HasPrefix(t, w)) {
-				n += 3
+			if match(w, t) {
+				inTags = true
 			}
 		}
+		if found > 0 || inTags {
+			n += 10
+		}
+		if inTags {
+			n += 5
+		}
+		extra += found
 	}
-	return n
+	if n == 0 {
+		return 0
+	}
+	if extra > 5 {
+		extra = 5
+	}
+	return n + extra
+}
+
+type indexEntry struct{ path, head, text string }
+
+// one entry per top-level bullet in index/*.md, with the headings above it,
+// since "## chemistry" is often the word that finds "module 4 worksheet"
+func indexEntries(dir string) []indexEntry {
+	paths, _ := filepath.Glob(filepath.Join(dir, "index", "*.md"))
+	var out []indexEntry
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		heads := map[int]string{}
+		head := func() string {
+			var hs []string
+			for lvl := 1; lvl <= 6; lvl++ {
+				if h, ok := heads[lvl]; ok {
+					hs = append(hs, h)
+				}
+			}
+			return strings.Join(hs, " / ")
+		}
+		var cur *indexEntry
+		flush := func() {
+			if cur != nil {
+				out = append(out, *cur)
+				cur = nil
+			}
+		}
+		for _, l := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+			switch {
+			case strings.HasPrefix(l, "#"):
+				flush()
+				lvl := len(l) - len(strings.TrimLeft(l, "#"))
+				for k := range heads {
+					if k >= lvl {
+						delete(heads, k)
+					}
+				}
+				heads[lvl] = strings.TrimSpace(strings.TrimLeft(l, "#"))
+			case strings.HasPrefix(l, "- "):
+				flush()
+				h := head()
+				text := strings.TrimPrefix(l, "- ")
+				if h != "" {
+					text = h + ": " + text
+				}
+				cur = &indexEntry{path: p, head: h, text: text}
+			case cur != nil && strings.HasPrefix(l, " ") && strings.TrimSpace(l) != "":
+				cur.text += "\n" + strings.TrimSpace(l)
+			default:
+				flush()
+			}
+		}
+		flush()
+	}
+	return out
 }

@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jxherc/aivault/internal/vault"
 )
 
 // native memories: what tools save in their own memory files (claude code's
@@ -143,11 +145,7 @@ func splitMem(src memSrc, text string) [][2]string { // key, text
 	return out
 }
 
-// looks like a password, key or token. those stay out of the vault, which
-// syncs everywhere and gets read by every tool
-var secretRe = regexp.MustCompile(`(?i)(\b(password|passwd|api[_ -]?key|secret|token|bearer)\b\s*[:=]\s*\S{6,})|(\bpassword\s+[A-Za-z0-9_\-!@#$%^&*]{6,})|(\bsk-[A-Za-z0-9_\-]{8,}[0-9][A-Za-z0-9_\-]{4,})|(gh[pousr]_[A-Za-z0-9]{20,})|(AKIA[0-9A-Z]{16})|(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(xox[baprs]-[A-Za-z0-9-]{10,})`)
-
-func looksSecret(s string) bool { return secretRe.MatchString(s) }
+func looksSecret(s string) bool { return vault.LooksSecret(s) }
 
 var tagClean = regexp.MustCompile(`[^a-z0-9_-]+`)
 

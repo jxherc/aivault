@@ -17,6 +17,9 @@ type jsonOp struct {
 	Path []string // object keys from the root
 	Val  any      // set this member...
 	List []string // ...or make sure these strings are in the array here
+	// with List: strings starting with this are ours too, so ones no longer
+	// in List get dropped (a vault file that was deleted)
+	Prefix string
 	// only set Val when the key isn't there. undo removes it only if we added it
 	IfMissing bool
 }
@@ -123,6 +126,20 @@ func jsonApply(b []byte, ops []jsonOp) (out []byte, added []string, err error) {
 						seen[s] = true
 					}
 				}
+				want := map[string]bool{}
+				for _, s := range op.List {
+					want[s] = true
+				}
+				if op.Prefix != "" {
+					for i := len(arr) - 1; i >= 0; i-- { // back to front so indexes stay valid
+						if s, ok := arr[i].(string); ok && strings.HasPrefix(s, op.Prefix) && !want[s] {
+							if err := patchOne(&v, "remove", fmt.Sprintf("%s/%d", pointer(op.Path), i), ""); err != nil {
+								return nil, nil, err
+							}
+							changed = true
+						}
+					}
+				}
 				for _, s := range op.List {
 					if !seen[s] {
 						q, _ := json.Marshal(s)
@@ -191,7 +208,7 @@ func jsonUndo(b []byte, ops []jsonOp, ours []string) ([]byte, error) {
 			}
 			var idx []int
 			for i, x := range arr {
-				if s, ok := x.(string); ok && ours[s] {
+				if s, ok := x.(string); ok && (ours[s] || (op.Prefix != "" && strings.HasPrefix(s, op.Prefix))) {
 					idx = append(idx, i)
 				}
 			}
