@@ -19,3 +19,57 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+
+  # the real install path: build release archives, serve them locally, run
+  # the install script, set up a vault and let doctor test the mcp server
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      AIVAULT_BASE_URL: http://127.0.0.1:18765
+      AIVAULT_NO_INIT: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish
+      - name: serve the archives
+        shell: bash
+        run: |
+          cd dist && nohup python3 -m http.server 18765 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 2
+      - name: install.sh
+        if: runner.os != 'Windows'
+        run: |
+          sh install.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./install.ps1
+          "$env:LOCALAPPDATA\Programs\aivault" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: set up and check
+        shell: bash
+        run: |
+          mkdir -p ~/.codex
+          aivault version
+          aivault init --yes --vault "$RUNNER_TEMP/v" --tools codex
+          aivault add --file me "ci was here"
+          aivault doctor
+          aivault search ci
+      - name: autosync
+        if: runner.os != 'macOS' # no gui login session on the mac runners for launchd
+        shell: bash
+        run: |
+          aivault autosync on || { [ "$RUNNER_OS" = Linux ] && echo "no user systemd on this runner"; }
+          aivault autosync status
+          aivault autosync off

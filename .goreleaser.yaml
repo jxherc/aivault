@@ -29,6 +29,18 @@ release:
 checksum:
   name_template: checksums.txt
 
+# linux packages: apt install ./aivault_*.deb, dnf install ./aivault_*.rpm,
+# apk add --allow-untrusted, pacman -U
+nfpms:
+  - package_name: aivault
+    file_name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    homepage: https://github.com/jxherc/aivault
+    description: one folder of rules, skills and memory for all your ai coding tools
+    maintainer: jxherc <a@jxherc.com>
+    license: MIT
+    formats: [deb, rpm, apk, archlinux]
+    bindir: /usr/bin
+
 changelog:
   use: github
   sort: asc
@@ -40,7 +52,9 @@ homebrew_casks:
     repository:
       owner: jxherc
       name: homebrew-tap
-      token: "{{ .Env.TAP_TOKEN }}"
+      token: '{{ envOrDefault "TAP_TOKEN" "" }}'
+    # without the token the release still happens, just without the tap
+    skip_upload: '{{ if envOrDefault "TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
     homepage: https://github.com/jxherc/aivault
     description: one folder of rules, skills and memory for all your ai coding tools
     # the binary isn't signed or notarized yet, so macos would block it.
@@ -58,7 +72,8 @@ scoops:
     repository:
       owner: jxherc
       name: scoop-bucket
-      token: "{{ .Env.TAP_TOKEN }}"
+      token: '{{ envOrDefault "TAP_TOKEN" "" }}'
+    skip_upload: '{{ if envOrDefault "TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
     homepage: https://github.com/jxherc/aivault
     description: one folder of rules, skills and memory for all your ai coding tools
     license: MIT

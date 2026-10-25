@@ -6,20 +6,36 @@ save a preference in claude code, and codex or qwen code knows it the next time 
 
 ## install
 
-```sh
-brew install --cask jxherc/tap/aivault
-```
-
-windows, with scoop:
+mac or linux:
 
 ```sh
-scoop bucket add jxherc https://github.com/jxherc/scoop-bucket
-scoop install aivault
+curl -fsSL https://raw.githubusercontent.com/jxherc/aivault/main/install.sh | sh
 ```
 
-or with go: `go install github.com/jxherc/aivault/cmd/aivault@latest`. binaries for mac, linux and windows are on the releases page.
+windows (powershell):
 
-the mac binary isn't signed yet. the brew cask clears the quarantine flag after install so macos doesn't block it.
+```powershell
+irm https://raw.githubusercontent.com/jxherc/aivault/main/install.ps1 | iex
+```
+
+both download the latest release, check its checksum, put `aivault` on your PATH (`~/.local/bin`, or `%LOCALAPPDATA%\Programs\aivault` on windows) and offer to run setup. `AIVAULT_VERSION=0.2.0` pins a version, `AIVAULT_DIR` picks the folder, `AIVAULT_NO_INIT=1` skips the setup question.
+
+other ways:
+
+| | |
+| --- | --- |
+| homebrew | `brew install --cask jxherc/tap/aivault` |
+| scoop | `scoop bucket add jxherc https://github.com/jxherc/scoop-bucket` then `scoop install aivault` |
+| debian, ubuntu | download `aivault_linux_<arch>.deb` from the releases page, `sudo apt install ./aivault_linux_amd64.deb` |
+| fedora, rhel | `sudo dnf install ./aivault_linux_amd64.rpm` |
+| alpine | `sudo apk add --allow-untrusted ./aivault_linux_amd64.apk` |
+| arch | `sudo pacman -U ./aivault_linux_amd64.pkg.tar.zst` |
+| go | `go install github.com/jxherc/aivault/cmd/aivault@latest` |
+| by hand | every archive is on the [releases page](https://github.com/jxherc/aivault/releases) |
+
+`aivault update` updates a script or by-hand install in place (it checks the checksum too). brew, scoop and the linux packages update through their own package manager, and `aivault update` tells you the command.
+
+the mac binary isn't signed yet. the install script and the brew cask both avoid the quarantine flag, so macos doesn't block it. a file downloaded with a browser needs `xattr -d com.apple.quarantine aivault`.
 
 ## setup
 
@@ -27,10 +43,16 @@ the mac binary isn't signed yet. the brew cask clears the quarantine flag after 
 aivault init
 ```
 
-init asks where to keep the vault (default `~/ai-vault`) and which tools to connect, then restart those tools. for scripts:
+init asks where to keep the vault (default `~/ai-vault`), which tools to connect, and whether to keep them in sync in the background. then restart those tools and run:
 
 ```sh
-aivault init --yes --vault ~/ai-vault --tools claude,codex,qwen
+aivault doctor
+```
+
+for scripts:
+
+```sh
+aivault init --yes --vault ~/ai-vault --tools claude,codex,qwen --autosync
 ```
 
 > **installed a new ai tool after setup? connect it yourself.** aivault only wires the tools it finds when you run `init`. it doesn't watch for new ones. run `aivault init` again: tools already connected stay connected, and the new one shows up ticked. `aivault doctor` also lists anything installed but not connected.
@@ -74,12 +96,63 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 | | |
 | --- | --- |
 | `aivault init` | set up the vault and connect tools |
-| `aivault doctor` | check everything is still connected |
+| `aivault doctor` | check everything (aliases: `status`, `health`) |
+| `aivault doctor --fix` | reconnect broken tools and refresh stale copies, then check again |
 | `aivault sync` | refresh every tool after editing the vault, and pull in anything new from them (rules text, skills, their own memories) |
+| `aivault autosync on\|off\|status` | keep everything in sync in the background, from login on |
+| `aivault watch` | the same in the foreground: refresh tools when a rules file changes (`--sync 1h` also runs a full sync every hour) |
+| `aivault search <query>` | search memories, skills and `index/` lists |
+| `aivault add [--file remember] <text>` | save a memory from the terminal, and add it to a vault file too |
+| `aivault open [file]` | open the vault, or one file (`remember`, `memory`, `skills`...) |
 | `aivault import` | move existing rules and skills into the vault |
 | `aivault remove [tool...]` | disconnect tools, all of them if none named |
-| `aivault search <query>` | search memories, skills and `index/` lists |
+| `aivault update` | update aivault itself (`--check` only looks) |
+| `aivault completion <shell>` | tab completion for bash, zsh, fish or powershell |
 | `aivault mcp` | the mcp server the tools launch |
+
+### doctor
+
+```
+$ aivault doctor
+aivault
+  · version           0.2.0
+  ✓ binary            /Users/me/.local/bin/aivault
+  ✓ update            latest
+
+vault
+  ✓ folder            /Users/me/ai-vault
+  ✓ rules             6 files, 22 KB: AGENTS.md, me.md, dont.md, mistakes.md, portfolio.md, remember.md
+  · contents          229 memories, 219 skills, 3 index lists
+  ✓ secrets           nothing that looks like a key or password
+
+mcp
+  ✓ server            starts, lists both tools, search works (28 ms)
+
+tools
+  ✓ Claude Code       rules and mcp in place
+  ✗ Codex             ~/.codex/AGENTS.md has an old copy of the vault rules. run `aivault sync`
+  · Gemini CLI        installed but not connected. `aivault init` connects it
+  ✓ skill links       543 links
+
+sync
+  · last sync         2 h ago
+  · autosync          off. `aivault autosync on` keeps every tool current by itself
+```
+
+the mcp check is real: doctor starts the server the same way your tools do, lists its tools and runs a search. `--json` prints the same report for scripts, `--quick` skips the mcp test and the update check. it exits non-zero when something is broken.
+
+### autosync
+
+`aivault autosync on` installs a small background job: a launchd agent on mac, a systemd user service on linux, a logon task on windows. it runs `aivault watch --sync 1h`: an edit to a rules file reaches every tool within a few seconds, and once an hour a full sync pulls in what the tools saved in their own memories. the log is `~/.aivault/watch.log` (`journalctl --user -u aivault` on linux). `aivault autosync off` removes it.
+
+### shell completion
+
+```sh
+aivault completion zsh > "${fpath[1]}/_aivault"       # zsh
+aivault completion bash > ~/.local/share/bash-completion/completions/aivault
+aivault completion fish > ~/.config/fish/completions/aivault.fish
+aivault completion powershell >> $PROFILE              # powershell
+```
 
 ## supported tools
 
@@ -127,11 +200,11 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 
 **nothing here is guaranteed**
 - every connected tool gets the vault rules and the two vault tools, but the model decides when to call `vault_search` and `vault_remember`. the default rules push hard (search before answering anything about you, save whenever you say "remember"), and most models follow them, but some answers will skip the vault
-- tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see your own edits after `aivault sync`. a line added with `vault_remember` and `file` updates their copies right away
+- tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see your own edits after `aivault sync`, unless autosync is on. a line added with `vault_remember` and `file` updates their copies right away
 - every top-level vault file goes into every tool's context. a big one costs tokens in every session and can push a tool over its size limit (Codex's is 32 KB by default). `doctor` warns about Codex
 - tools load their rules when a session starts. restart them after `init` or `sync`
 - a tool you install after setup isn't connected until you run `aivault init` again
-- a memory a tool saves in its own memory reaches the vault at the next `aivault sync`, not right away. nothing runs sync for you
+- a memory a tool saves in its own memory reaches the vault at the next sync, not right away. with autosync on that's within the hour. without it, nothing runs sync for you
 - search is plain keyword matching, not semantic search. a memory worded differently from the question can be missed
 - `vault_remember` refuses text that looks like a password or key, but that check only catches obvious shapes. the vault is plain markdown, and it syncs wherever you put it (icloud, dropbox, git), so don't keep keys or passwords in it
 
@@ -153,6 +226,7 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 - **Gemini CLI** stopped serving free accounts on 2026-06-18. it still works with an api key
 - a vault path with spaces (like icloud's `Mobile Documents`) works for Claude Code's imports. Gemini and Qwen get a copy instead of an import, so run `sync` after edits there too
 - on windows, skill links fall back to copies when links aren't allowed. run `sync` after changing skills
+- on windows, autosync starts through a hidden powershell window at logon. it can flash for a moment
 
 **what was tested for real** (2026-10-20, prompts that never mention the vault): Claude Code, Codex, OpenCode, Pi and DeepSeek Harness each answered from the vault rules, found a fact that only existed in a vault memory, and saved a new memory. Qwen Code passed the first two, and what it saved to its own memory showed up in the vault after a sync. Claude Code also found a memory that had only come from Hermes's own memory. the other tools are checked by unit tests and their own `mcp list` where installed, not by live model runs
 
