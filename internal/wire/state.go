@@ -23,6 +23,8 @@ type State struct {
 	ClaudeMCP bool                `json:"claude_mcp,omitempty"`
 	// skills moved into the vault: original path -> where the original sits now
 	Imported map[string]*ImportRec `json:"imported,omitempty"`
+	// last time Apply ran to the end (init, sync, doctor --fix)
+	Synced time.Time `json:"synced,omitempty"`
 
 	path   string
 	backup string // this run's backup folder, made on first use

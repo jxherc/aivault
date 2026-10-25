@@ -21,13 +21,29 @@ var version = "dev"
 
 const usage = `aivault: one folder of rules, skills and memory for all your ai tools
 
-  aivault init              set up the vault and connect your tools
-  aivault doctor            check everything is still connected
-  aivault sync              refresh the tools and pull in anything new from them
-  aivault import            move existing rules and skills into the vault
-  aivault remove [tool...]  disconnect tools (all if none given)
-  aivault search <query>    search memories and skills
-  aivault mcp               the mcp server your tools launch
+setup
+  aivault init                 set up the vault and connect your tools
+  aivault remove [tool...]     disconnect tools (all if none given)
+
+health
+  aivault doctor               check everything: vault, mcp server, every tool
+                               (--fix repairs what it can, --json for scripts)
+  aivault update               update aivault itself (--check only looks)
+
+keeping in sync
+  aivault sync                 refresh the tools and pull in anything new from them
+  aivault autosync on|off      keep everything in sync in the background
+  aivault watch                the same, in this terminal
+  aivault import               move existing rules and skills into the vault
+
+using the vault
+  aivault search <query>       search memories, skills and index lists
+  aivault add [--file f] text  save a memory (--file remember adds it to remember.md too)
+  aivault open [file]          open the vault, or one of its files
+
+other
+  aivault completion <shell>   shell completion: bash, zsh, fish, powershell
+  aivault mcp                  the mcp server your tools launch
   aivault version
 
 tools: claude, codex, opencode, gemini, kilo, crush, goose, pi, hermes,
@@ -40,12 +56,13 @@ func main() {
 		fmt.Print(usage)
 		os.Exit(2)
 	}
+	cleanOld()
 	var err error
 	switch os.Args[1] {
 	case "init":
 		err = cmdInit(os.Args[2:])
-	case "doctor":
-		err = cmdDoctor()
+	case "doctor", "status", "health", "check":
+		err = cmdDoctor(os.Args[2:])
 	case "sync":
 		err = cmdSync()
 	case "import":
@@ -56,8 +73,20 @@ func main() {
 		err = cmdSearch(os.Args[2:])
 	case "mcp":
 		err = cmdMCP(os.Args[2:])
+	case "add":
+		err = cmdAdd(os.Args[2:])
+	case "open":
+		err = cmdOpen(os.Args[2:])
+	case "watch":
+		err = cmdWatch(os.Args[2:])
+	case "autosync":
+		err = cmdAutosync(os.Args[2:])
+	case "update", "upgrade":
+		err = cmdUpdate(os.Args[2:])
+	case "completion":
+		err = cmdCompletion(os.Args[2:])
 	case "version", "--version", "-v":
-		fmt.Println(version)
+		fmt.Println(curVersion())
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
@@ -95,6 +124,7 @@ func cmdInit(args []string) error {
 	dir := fs.String("vault", "", "vault folder (default ~/ai-vault)")
 	tools := fs.String("tools", "", "comma list: claude,codex,opencode (default: the ones found)")
 	imp := fs.Bool("import", false, "move the tools' existing rules and skills into the vault")
+	auto := fs.Bool("autosync", false, "keep the tools in sync in the background (see `aivault autosync`)")
 	fs.Parse(args)
 
 	e, s, err := load()
@@ -130,7 +160,7 @@ func cmdInit(args []string) error {
 		if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
 			return errors.New("not a terminal. use `aivault init --yes` with flags")
 		}
-		if err := wizard(e, s, &vdir, &picked, found, imp); err != nil {
+		if err := wizard(e, s, &vdir, &picked, found, imp, auto); err != nil {
 			return err
 		}
 	}
@@ -143,7 +173,14 @@ func cmdInit(args []string) error {
 	if err := wire.Apply(e, s, vdir, picked, *imp, os.Stdout); err != nil {
 		return err
 	}
-	fmt.Println("\ndone. restart your ai tools so they load the vault.")
+	if *auto {
+		if err := autosyncOn(e); err != nil {
+			fmt.Println("couldn't turn on autosync:", err)
+		} else {
+			fmt.Println("autosync on: edits to the vault reach every tool by themselves.")
+		}
+	}
+	fmt.Println("\ndone. restart your ai tools so they load the vault. `aivault doctor` checks everything.")
 	fmt.Println(newToolNote)
 	return nil
 }
@@ -161,7 +198,7 @@ func unwired(e *wire.Env, s *wire.State) []string {
 	return out
 }
 
-func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []string, imp *bool) error {
+func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []string, imp, auto *bool) error {
 	isFound := map[string]bool{}
 	for _, f := range found {
 		isFound[f] = true
@@ -215,6 +252,15 @@ func wizard(e *wire.Env, s *wire.State, vdir *string, picked *[]string, found []
 			Negative("leave them").
 			Value(imp))
 	}
+	if on, _ := autosyncState(e); !on {
+		*auto = true
+		fields = append(fields, huh.NewConfirm().
+			Title("keep everything in sync in the background?").
+			Description("starts at login. vault edits reach every tool within seconds, and the tools' own memories come in every hour.\n`aivault autosync off` stops it.").
+			Affirmative("yes").
+			Negative("no, i'll run sync").
+			Value(auto))
+	}
 	ok := true
 	fields = append(fields, huh.NewConfirm().
 		Title("apply?").
@@ -238,30 +284,6 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
-}
-
-func cmdDoctor() error {
-	e, s, err := load()
-	if err != nil {
-		return err
-	}
-	bad := wire.Doctor(e, s)
-	for _, h := range wire.Hints(e, s) {
-		fmt.Println("note:", h)
-	}
-	if s.Vault != "" {
-		if n := unwired(e, s); len(n) > 0 {
-			fmt.Printf("installed but not connected: %s. run `aivault init` to connect.\n", strings.Join(n, ", "))
-		}
-	}
-	if len(bad) == 0 {
-		fmt.Printf("all good. vault: %s, tools: %s\n", s.Vault, strings.Join(s.Tools, ", "))
-		return nil
-	}
-	for _, b := range bad {
-		fmt.Println("-", b)
-	}
-	return fmt.Errorf("%d problem(s)", len(bad))
 }
 
 func cmdSync() error {

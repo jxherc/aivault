@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jxherc/aivault/internal/vault"
 )
@@ -78,6 +79,7 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 	for _, w := range syncLinks(e, s) {
 		fmt.Fprintln(out, "  warning:", w)
 	}
+	s.Synced = time.Now()
 	if err := s.Save(); err != nil {
 		return err
 	}
@@ -185,6 +187,9 @@ func Doctor(e *Env, s *State) []string {
 	}
 	return append(bad, checkLinks(s)...)
 }
+
+// LinkProblems is the skill-link part of Doctor
+func LinkProblems(s *State) []string { return checkLinks(s) }
 
 func Names() []string {
 	var out []string
