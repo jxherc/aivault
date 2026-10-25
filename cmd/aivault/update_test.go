@@ -93,7 +93,7 @@ func TestManagedBy(t *testing.T) {
 func TestServiceFiles(t *testing.T) {
 	e := &wire.Env{Home: "/home/me", StateDir: "/home/me/.aivault", Bin: "/opt/a b/aivault"}
 	p := plist(e)
-	if !strings.Contains(p, "<string>/opt/a b/aivault</string>\n    <string>watch</string>") || !strings.Contains(p, "/home/me/.aivault/watch.log") {
+	if !strings.Contains(p, "<string>/opt/a b/aivault</string>\n    <string>watch</string>") || !strings.Contains(p, filepath.Join("/home/me/.aivault", "watch.log")) {
 		t.Fatalf("plist:\n%s", p)
 	}
 	if u := unit(e); !strings.Contains(u, `ExecStart="/opt/a b/aivault" "watch" "--sync" "1h"`) {
