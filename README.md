@@ -1,5 +1,7 @@
 # ai vault
 
+[简体中文](README.zh-Hans.md)
+
 one folder of rules, skills and memory that all your ai coding tools read: claude code, codex, opencode, gemini cli, qwen code, kimi code, deepseek harness and 14 more.
 
 save a preference in claude code, and codex or qwen code knows it the next time you open it. write a skill once and every tool has it.
