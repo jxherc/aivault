@@ -22,7 +22,11 @@ var (
 	// typos too: "mistka", "mistkae"
 	mistakeRe  = regexp.MustCompile(`(?i)\bmi\w{0,2}st?\w{0,2}k\w*|learn from (this|that|it|the|your)|(don'?t|never) (make|do) (that|this|it) again|why did you|you (broke|messed|screwed|forgot)|still (broken|not working)|(isn'?t|not) fixed|错误|搞错|别再`)
 	rememberRe = regexp.MustCompile(`(?i)\bremember\b|from now on|记住|以后都`)
+	// naming the file isn't flagging a mistake: "check mistakes.md"
+	fileRe = regexp.MustCompile(`(?i)\bmistakes?\.md\b`)
 )
+
+func flagsMistake(s string) bool { return mistakeRe.MatchString(fileRe.ReplaceAllString(s, "")) }
 
 func cmdHook(args []string) error {
 	if len(args) == 0 {
@@ -62,7 +66,7 @@ func cmdHook(args []string) error {
 
 func promptNudge(p string) string {
 	switch {
-	case mistakeRe.MatchString(p):
+	case flagsMistake(p):
 		return `aivault: the user is pointing out a mistake. before you go on, call vault_remember with file "mistakes": what went wrong, then "->" and the rule that stops it happening again. if you don't know the cause yet, save what happened now and save the cause when you find it. don't write a date, the tool adds one.`
 	case rememberRe.MatchString(p):
 		return `aivault: the user wants this remembered. call vault_remember with file "remember" now, in one short line, before you answer. saying "noted" saves nothing.`
@@ -77,8 +81,9 @@ type turn struct {
 }
 
 // reads a claude code transcript (jsonl) and returns the last turn: from the
-// last real prompt to the end, with messages queued mid-turn and messages
-// from other sessions counted as the user's
+// last real prompt to the end, plus messages the user queued mid-turn. other
+// sessions' messages don't count: a peer reporting its own mistake isn't the
+// user flagging one here
 func lastTurn(r io.Reader) turn {
 	t := turn{saved: map[string]bool{}}
 	sc := bufio.NewScanner(r)
@@ -107,8 +112,6 @@ func lastTurn(r io.Reader) turn {
 			if json.Unmarshal(e.Message.Content, &s) == nil {
 				if !strings.HasPrefix(s, "<") {
 					t = turn{said: []string{s}, saved: map[string]bool{}} // a new prompt starts a new turn
-				} else if strings.HasPrefix(s, "<cross-session-message") {
-					t.said = append(t.said, s)
 				}
 				continue
 			}
@@ -126,7 +129,7 @@ func lastTurn(r io.Reader) turn {
 				case p.Type != "text":
 				case !tool && !strings.HasPrefix(p.Text, "<"):
 					t = turn{said: []string{p.Text}, saved: map[string]bool{}}
-				case strings.Contains(p.Text, "The user sent a new message while you were working:"), strings.HasPrefix(p.Text, "<cross-session-message"):
+				case strings.Contains(p.Text, "The user sent a new message while you were working:"):
 					t.said = append(t.said, p.Text)
 				}
 			}
@@ -166,7 +169,7 @@ func unsaved(r io.Reader) string {
 	t := lastTurn(r)
 	said := strings.Join(t.said, "\n")
 	switch {
-	case mistakeRe.MatchString(said) && !t.saved["mistakes"] && !t.saved["dont"]:
+	case flagsMistake(said) && !t.saved["mistakes"] && !t.saved["dont"]:
 		return `aivault: the user pointed out a mistake this turn and it isn't in the vault yet. call vault_remember with file "mistakes" now: what went wrong -> the rule that stops it happening again (no date, the tool adds it). if the cause is still unknown, save what happened and say so. if the user wasn't talking about a mistake at all, just end.`
 	case rememberRe.MatchString(said) && !t.saved["*"]:
 		return `aivault: the user asked you to remember something this turn and nothing was saved. call vault_remember with file "remember" now, one short line. if they didn't mean a lasting rule, just end.`

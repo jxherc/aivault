@@ -30,7 +30,9 @@ func TestStopHook(t *testing.T) {
 		{"tool output mentions mistakes", jl(p("fix the readme"), toolResult), false},
 		{"remember not saved", jl(p("remember that i use tabs")), true},
 		{"remember saved by prefix", jl(p("remember that i use tabs"), saveRem), false},
-		{"other session relays one", jl(p("go on"), `{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"<cross-session-message from=\"x\">you made both mistakes</cross-session-message>"}]}}`), true},
+		{"other session's message", jl(p("go on"), `{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"<cross-session-message from=\"x\">fixed. the missed grep is saved as its own mistakes.md line</cross-session-message>"}]}}`), false},
+		{"user names the file", jl(p("can you clean up mistakes.md")), false},
+		{"mid-turn message from the user", jl(p("go on"), `{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"The user sent a new message while you were working:\nyou made a mistake there"}]}}`), true},
 	} {
 		if got := unsaved(strings.NewReader(c.transcript)) != ""; got != c.block {
 			t.Errorf("%s: block = %v", c.name, got)
@@ -46,6 +48,7 @@ func TestPromptNudge(t *testing.T) {
 		"from now on use tabs":            `"remember"`,
 		"make the font bigger please":     "",
 		"the misty mountains, keep going": "",
+		"tidy up mistakes.md please":      "",
 	} {
 		got := promptNudge(in)
 		if (want == "") != (got == "") || !strings.Contains(got, want) {
