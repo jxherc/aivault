@@ -108,7 +108,9 @@ func health(e *wire.Env, s *wire.State, quick bool) *report {
 			r.add("aivault", "update", "info", "no release published yet")
 		case err != nil:
 			r.add("aivault", "update check", "info", "couldn't reach github")
-		case curVersion() != "dev" && newer(rel.Tag, curVersion()):
+		case isDev(curVersion()):
+			r.add("aivault", "update", "info", "local build. "+strings.TrimPrefix(rel.Tag, "v")+" is the latest release")
+		case newer(rel.Tag, curVersion()):
 			r.add("aivault", "update", "warn", strings.TrimPrefix(rel.Tag, "v")+" is out. run `aivault update`")
 		default:
 			r.add("aivault", "update", "ok", "latest")

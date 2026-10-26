@@ -26,6 +26,14 @@ func TestNewer(t *testing.T) {
 	}
 }
 
+func TestIsDev(t *testing.T) {
+	for v, want := range map[string]bool{"dev": true, "0.1.1-0.20261026141233-c16c2b511288+dirty": true, "0.0.0-20261024035510-449c0ce3d106": true, "0.1.1": false, "0.1.0-rc1": false} {
+		if isDev(v) != want {
+			t.Errorf("%s: %v", v, !want)
+		}
+	}
+}
+
 func TestReleaseArchives(t *testing.T) {
 	var tgz bytes.Buffer
 	gz := gzip.NewWriter(&tgz)

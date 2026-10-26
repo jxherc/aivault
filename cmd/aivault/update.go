@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -34,6 +35,12 @@ func curVersion() string {
 	}
 	return "dev"
 }
+
+// a local build: no ldflags version, or a go pseudo-version like
+// 0.1.1-0.20261026141233-c16c2b511288+dirty
+var pseudoRe = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
+
+func isDev(v string) bool { return v == "dev" || strings.Contains(v, "+dirty") || pseudoRe.MatchString(v) }
 
 type release struct {
 	Tag    string `json:"tag_name"`
@@ -108,7 +115,7 @@ func cmdUpdate(args []string) error {
 		return err
 	}
 	cur, latest := curVersion(), strings.TrimPrefix(r.Tag, "v")
-	if cur != "dev" && !newer(latest, cur) {
+	if !isDev(cur) && !newer(latest, cur) && !*force {
 		fmt.Printf("up to date (%s)\n", cur)
 		return nil
 	}
@@ -126,7 +133,7 @@ func cmdUpdate(args []string) error {
 	if how := managedBy(exe); how != "" && !*force {
 		return fmt.Errorf("%s was installed by a package manager. update with %s", exe, how)
 	}
-	if cur == "dev" && !*force {
+	if isDev(cur) && !*force {
 		return errors.New("this is a dev build. `aivault update --force` replaces it with the release")
 	}
 
