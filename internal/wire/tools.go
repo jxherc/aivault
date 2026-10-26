@@ -86,6 +86,9 @@ var claude = &Tool{
 		if err := setBlock(s, filepath.Join(e.ClaudeDir, "CLAUDE.md"), mdMarks, claudeRules(s)); err != nil {
 			return err
 		}
+		if err := setHooks(e, s); err != nil {
+			return err
+		}
 		if !e.Has("claude") {
 			return fmt.Errorf("rules are wired, but the claude cli isn't on PATH so the mcp server wasn't added. run `aivault sync` once it is")
 		}
@@ -102,6 +105,9 @@ var claude = &Tool{
 	Remove: func(e *Env, s *State) error {
 		if err := unBlock(s, filepath.Join(e.ClaudeDir, "CLAUDE.md"), mdMarks); err != nil {
 			return err
+		}
+		if err := s.undo(claudeSettings(e), hooksUndo); err != nil {
+			return fmt.Errorf("couldn't take the hooks out of settings.json: %w", err)
 		}
 		if s.ClaudeMCP {
 			if !e.Has("claude") {
@@ -121,6 +127,8 @@ var claude = &Tool{
 		if !mdMarks.has(b) {
 			bad = append(bad, p+" has no ai-vault block")
 		}
+		sb, _ := read(claudeSettings(e))
+		bad = append(bad, hooksMissing(sb, e.Bin)...)
 		switch {
 		case !s.ClaudeMCP:
 			bad = append(bad, "the mcp server was never added to claude code. run `aivault sync` with the claude cli on PATH")
@@ -190,6 +198,22 @@ func tomlStr(v string) string {
 }
 
 // shared helpers for marker blocks
+
+func setHooks(e *Env, s *State) error {
+	p := claudeSettings(e)
+	b, err := read(p)
+	if err != nil {
+		return err
+	}
+	out, err := hooksApply(b, e.Bin)
+	if err != nil {
+		return fmt.Errorf("can't add hooks to %s: %w", p, err)
+	}
+	if bytes.Equal(out, b) {
+		return nil
+	}
+	return s.write(p, out)
+}
 
 func claudeRules(s *State) string {
 	var lines []string

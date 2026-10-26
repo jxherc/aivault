@@ -85,6 +85,8 @@ func main() {
 		err = cmdUpdate(os.Args[2:])
 	case "completion":
 		err = cmdCompletion(os.Args[2:])
+	case "hook":
+		err = cmdHook(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(curVersion())
 	case "help", "--help", "-h":
