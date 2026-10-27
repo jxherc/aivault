@@ -44,7 +44,7 @@ func TestReleaseArchives(t *testing.T) {
 	}
 	tw.Close()
 	gz.Close()
-	if b, err := extract(tgz.Bytes(), "aivault_linux_amd64.tar.gz"); err != nil || string(b) != "BIN" {
+	if b, err := extract(tgz.Bytes(), "aivault-linux-x64.tar.gz"); err != nil || string(b) != "BIN" {
 		t.Fatalf("tar: %q %v", b, err)
 	}
 
@@ -53,19 +53,19 @@ func TestReleaseArchives(t *testing.T) {
 	w, _ := zw.Create("aivault.exe")
 	w.Write([]byte("EXE"))
 	zw.Close()
-	if b, err := extract(zb.Bytes(), "aivault_windows_amd64.zip"); err != nil || string(b) != "EXE" {
+	if b, err := extract(zb.Bytes(), "aivault-windows-x64.zip"); err != nil || string(b) != "EXE" {
 		t.Fatalf("zip: %q %v", b, err)
 	}
 
 	h := sha256.Sum256(tgz.Bytes())
-	sums := hex.EncodeToString(h[:]) + "  aivault_linux_amd64.tar.gz\nabc  other.zip\n"
-	if err := checkSum(tgz.Bytes(), []byte(sums), "aivault_linux_amd64.tar.gz"); err != nil {
+	sums := hex.EncodeToString(h[:]) + "  aivault-linux-x64.tar.gz\nabc  other.zip\n"
+	if err := checkSum(tgz.Bytes(), []byte(sums), "aivault-linux-x64.tar.gz"); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkSum([]byte("tampered"), []byte(sums), "aivault_linux_amd64.tar.gz"); err == nil {
+	if err := checkSum([]byte("tampered"), []byte(sums), "aivault-linux-x64.tar.gz"); err == nil {
 		t.Fatal("tampered archive passed")
 	}
-	if err := checkSum(tgz.Bytes(), []byte(sums), "aivault_darwin_arm64.tar.gz"); err == nil {
+	if err := checkSum(tgz.Bytes(), []byte(sums), "aivault-macos-apple-silicon.tar.gz"); err == nil {
 		t.Fatal("unlisted archive passed")
 	}
 }
@@ -106,5 +106,20 @@ func TestServiceFiles(t *testing.T) {
 	}
 	if u := unit(e); !strings.Contains(u, `ExecStart="/opt/a b/aivault" "watch" "--sync" "1h"`) {
 		t.Fatalf("unit:\n%s", u)
+	}
+}
+
+func TestAssetName(t *testing.T) {
+	for _, c := range [][3]string{
+		{"darwin", "arm64", "aivault-macos-apple-silicon.tar.gz"},
+		{"darwin", "amd64", "aivault-macos-intel.tar.gz"},
+		{"linux", "amd64", "aivault-linux-x64.tar.gz"},
+		{"linux", "arm64", "aivault-linux-arm64.tar.gz"},
+		{"windows", "amd64", "aivault-windows-x64.zip"},
+		{"windows", "arm64", "aivault-windows-arm64.zip"},
+	} {
+		if got := assetName(c[0], c[1]); got != c[2] {
+			t.Errorf("%s/%s: %s, want %s", c[0], c[1], got, c[2])
+		}
 	}
 }

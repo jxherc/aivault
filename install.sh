@@ -14,12 +14,12 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'aivault install: %s\n' "$*" >&2; exit 1; }
 
 case "$(uname -s)" in
-  Darwin) os=darwin ;;
+  Darwin) os=macos ;;
   Linux) os=linux ;;
   *) die "this script is for mac and linux. on windows: irm https://raw.githubusercontent.com/$repo/main/install.ps1 | iex" ;;
 esac
 case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
+  x86_64 | amd64) arch=x64 ;;
   arm64 | aarch64) arch=arm64 ;;
   *) die "no build for $(uname -m). try: go install github.com/$repo/cmd/aivault@latest" ;;
 esac
@@ -39,7 +39,8 @@ elif [ "$ver" = latest ]; then
 else
   base="https://github.com/$repo/releases/download/v${ver#v}"
 fi
-file="aivault_${os}_${arch}.tar.gz"
+[ "$os" = macos ] && { [ "$arch" = arm64 ] && arch=apple-silicon || arch=intel; }
+file="aivault-$os-$arch.tar.gz"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 

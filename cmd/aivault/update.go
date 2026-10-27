@@ -40,7 +40,9 @@ func curVersion() string {
 // 0.1.1-0.20261026141233-c16c2b511288+dirty
 var pseudoRe = regexp.MustCompile(`\d{14}-[0-9a-f]{12}`)
 
-func isDev(v string) bool { return v == "dev" || strings.Contains(v, "+dirty") || pseudoRe.MatchString(v) }
+func isDev(v string) bool {
+	return v == "dev" || strings.Contains(v, "+dirty") || pseudoRe.MatchString(v)
+}
 
 type release struct {
 	Tag    string `json:"tag_name"`
@@ -137,10 +139,7 @@ func cmdUpdate(args []string) error {
 		return errors.New("this is a dev build. `aivault update --force` replaces it with the release")
 	}
 
-	name := fmt.Sprintf("aivault_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
-	if runtime.GOOS == "windows" {
-		name = strings.TrimSuffix(name, ".tar.gz") + ".zip"
-	}
+	name := assetName(runtime.GOOS, runtime.GOARCH)
 	var archURL, sumURL string
 	for _, a := range r.Assets {
 		switch a.Name {
@@ -201,6 +200,23 @@ func checkSum(data, sums []byte, name string) error {
 		}
 	}
 	return fmt.Errorf("checksums.txt doesn't list %s", name)
+}
+
+// matches the archive names in .goreleaser.yaml
+func assetName(goos, goarch string) string {
+	os, arch, ext := goos, goarch, ".tar.gz"
+	switch {
+	case goos == "darwin" && goarch == "arm64":
+		os, arch = "macos", "apple-silicon"
+	case goos == "darwin":
+		os, arch = "macos", "intel"
+	case goarch == "amd64":
+		arch = "x64"
+	}
+	if goos == "windows" {
+		ext = ".zip"
+	}
+	return "aivault-" + os + "-" + arch + ext
 }
 
 // the aivault binary out of a release archive

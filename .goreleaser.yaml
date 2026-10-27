@@ -16,7 +16,9 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    # names people recognize: macos not darwin, x64 not amd64
+    name_template: >-
+      {{ .ProjectName }}-{{ if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}-{{ if eq .Os "darwin" }}{{ if eq .Arch "arm64" }}apple-silicon{{ else }}intel{{ end }}{{ else if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}
     files:
       - README.md
       - LICENSE
@@ -25,25 +27,54 @@ release:
   github:
     owner: jxherc
     name: aivault
+  header: |
+    mac and linux:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/jxherc/aivault/main/install.sh | sh
+    ```
+
+    windows (powershell):
+
+    ```powershell
+    irm https://raw.githubusercontent.com/jxherc/aivault/main/install.ps1 | iex
+    ```
+
+    already have it: `aivault update`
+
+    or download the file for your computer:
+
+    | | |
+    | --- | --- |
+    | mac (m1 or newer) | [aivault-macos-apple-silicon.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-apple-silicon.tar.gz) |
+    | mac (intel) | [aivault-macos-intel.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-intel.tar.gz) |
+    | windows | [aivault-windows-x64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-x64.zip) |
+    | windows on arm | [aivault-windows-arm64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-arm64.zip) |
+    | linux | [aivault-linux-x64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-x64.tar.gz) |
+    | linux on arm | [aivault-linux-arm64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-arm64.tar.gz) |
+
+    a mac file downloaded in a browser needs `xattr -d com.apple.quarantine aivault` once, because the binary isn't signed yet.
 
 checksum:
   name_template: checksums.txt
 
-# linux packages: apt install ./aivault_*.deb, dnf install ./aivault_*.rpm,
-# apk add --allow-untrusted, pacman -U
-nfpms:
-  - package_name: aivault
-    file_name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
-    homepage: https://github.com/jxherc/aivault
-    description: one folder of rules, skills and memory for all your ai coding tools
-    maintainer: jxherc <a@jxherc.com>
-    license: MIT
-    formats: [deb, rpm, apk, archlinux]
-    bindir: /usr/bin
-
 changelog:
-  use: github
+  use: git
   sort: asc
+  # titles look like "(fix) main general: hooks: ...". keep what's after the first ": "
+  format: '{{ trimprefix .Message (printf "%s: " (index (split .Message ": ") 0)) }}'
+  filters:
+    include: ['^\((new|change|remove|fix)\)']
+  groups:
+    - title: new
+      regexp: '^\(new\)'
+      order: 0
+    - title: changes
+      regexp: '^\((change|remove)\)'
+      order: 1
+    - title: fixes
+      regexp: '^\(fix\)'
+      order: 2
 
 # one token with write access to both repos below. the default actions
 # token can't push to other repos

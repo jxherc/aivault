@@ -11,12 +11,12 @@ $dir = if ($env:AIVAULT_DIR) { $env:AIVAULT_DIR } else { Join-Path $env:LOCALAPP
 $ver = if ($env:AIVAULT_VERSION) { $env:AIVAULT_VERSION } else { 'latest' }
 
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
-  'AMD64' { 'amd64' }
+  'AMD64' { 'x64' }
   'ARM64' { 'arm64' }
   default { throw "no build for $env:PROCESSOR_ARCHITECTURE. try: go install github.com/$repo/cmd/aivault@latest" }
 }
 $base = if ($env:AIVAULT_BASE_URL) { $env:AIVAULT_BASE_URL } elseif ($ver -eq 'latest') { "https://github.com/$repo/releases/latest/download" } else { "https://github.com/$repo/releases/download/v$($ver.TrimStart('v'))" }
-$file = "aivault_windows_$arch.zip"
+$file = "aivault-windows-$arch.zip"
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("aivault-" + [guid]::NewGuid())
 New-Item -ItemType Directory $tmp | Out-Null
 

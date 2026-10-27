@@ -28,14 +28,10 @@ irm https://raw.githubusercontent.com/jxherc/aivault/main/install.ps1 | iex
 | --- | --- |
 | homebrew | `brew install --cask jxherc/tap/aivault` |
 | scoop | `scoop bucket add jxherc https://github.com/jxherc/scoop-bucket`，然后 `scoop install aivault` |
-| debian、ubuntu | 从 releases 页面下载 `aivault_linux_<arch>.deb`，再 `sudo apt install ./aivault_linux_amd64.deb` |
-| fedora、rhel | `sudo dnf install ./aivault_linux_amd64.rpm` |
-| alpine | `sudo apk add --allow-untrusted ./aivault_linux_amd64.apk` |
-| arch | `sudo pacman -U ./aivault_linux_amd64.pkg.tar.zst` |
 | go | `go install github.com/jxherc/aivault/cmd/aivault@latest` |
-| 手动 | 所有压缩包都在 [releases 页面](https://github.com/jxherc/aivault/releases) |
+| 手动 | 从 [releases 页面](https://github.com/jxherc/aivault/releases) 下载适合你电脑的文件，比如 `aivault-macos-apple-silicon.tar.gz` |
 
-用脚本或手动装的，`aivault update` 会原地更新（同样会校验 checksum）。brew、scoop 和 linux 包走各自的包管理器更新，`aivault update` 会告诉你该跑什么命令。
+用脚本或手动装的，`aivault update` 会原地更新（同样会校验 checksum）。brew 和 scoop 走各自的包管理器更新，`aivault update` 会告诉你该跑什么命令。
 
 mac 版二进制还没签名。安装脚本和 brew cask 都不会带上 quarantine 标记，所以 macos 不会拦它。用浏览器下载的文件需要先跑 `xattr -d com.apple.quarantine aivault`。
 
