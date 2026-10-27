@@ -44,14 +44,12 @@ release:
 
     or download the file for your computer:
 
-    | | |
-    | --- | --- |
-    | mac (m1 or newer) | [aivault-macos-apple-silicon.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-apple-silicon.tar.gz) |
-    | mac (intel) | [aivault-macos-intel.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-intel.tar.gz) |
-    | windows | [aivault-windows-x64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-x64.zip) |
-    | windows on arm | [aivault-windows-arm64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-arm64.zip) |
-    | linux | [aivault-linux-x64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-x64.tar.gz) |
-    | linux on arm | [aivault-linux-arm64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-arm64.tar.gz) |
+    - mac (m1 or newer): [aivault-macos-apple-silicon.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-apple-silicon.tar.gz)
+    - mac (intel): [aivault-macos-intel.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-macos-intel.tar.gz)
+    - windows: [aivault-windows-x64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-x64.zip)
+    - windows on arm: [aivault-windows-arm64.zip](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-windows-arm64.zip)
+    - linux: [aivault-linux-x64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-x64.tar.gz)
+    - linux on arm: [aivault-linux-arm64.tar.gz](https://github.com/jxherc/aivault/releases/download/{{ .Tag }}/aivault-linux-arm64.tar.gz)
 
     a mac file downloaded in a browser needs `xattr -d com.apple.quarantine aivault` once, because the binary isn't signed yet.
 
