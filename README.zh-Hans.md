@@ -234,7 +234,7 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 **这里没有任何保证**
 - 每个连上的工具都会拿到 vault 规则和两个 vault 工具，但什么时候调用 `vault_search` 和 `vault_remember` 由模型决定。默认规则催得很紧（回答任何关于你的问题前先搜索，你一说“记住”就保存），大多数模型都会照做，但总有些回答会跳过 vault
 - 拿到规则副本的工具（codex、pi、hermes、kimi、dsh，以及上表里标了“副本”的其他工具）要等 `aivault sync` 之后才看得到你自己的改动，除非开了 autosync。用 `vault_remember` 加 `file` 添加的行会马上更新它们的副本
-- vault 顶层的每个文件都会进每个工具的上下文。文件一大，每次会话都要多花 token，还可能让工具超出大小上限（Codex 默认是 32 KB）。`doctor` 会针对 Codex 发出警告
+- vault 顶层的每个文件都会进每个工具的上下文。文件一大，每次会话都要多花 token，还可能让工具超出大小上限。Hermes 和 DeepSeek Harness 有上限（见下文），规则快被截断时 `doctor` 会提醒
 - 工具在会话开始时加载规则。`init` 或 `sync` 之后要重启它们
 - 配置之后才装的工具，要再跑一次 `aivault init` 才会连上
 - 工具存进自己记忆的东西，要到下次同步才会进 vault，不是马上。开了 autosync 的话，一小时内就会到。没开的话，没有任何东西会替你跑 sync
@@ -248,13 +248,13 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 
 **各个工具**
 - **OpenCode**：如果你的 `opencode.json` 里有 skill 白名单（`"permission": {"skill": {"*": "deny", ...}}`），不在名单上的 vault skill 会一直被拦着。aivault 不会改你的权限规则：`init` 和 `doctor` 会告诉你有多少个 vault skill 被拦了，列出其中几个，并给出要加的那一行。OpenCode 也会读 `~/.claude/skills` 和 `~/.agents/skills`，所以同一个 skill 可能列出两次
-- **Codex**：它会拦下没人批准过的 mcp 调用，而 headless 运行时没法询问，所以 aivault 预先批准了自己的两个工具（`default_tools_approval_mode = "approve"`）。另外，Codex 读指令读到 32 KB 就停。如果你的规则更大，就在 `~/.codex/config.toml` 里调高 `project_doc_max_bytes`。`doctor` 会按这个设置来检查
+- **Codex**：它会拦下没人批准过的 mcp 调用，而 headless 运行时没法询问，所以 aivault 预先批准了自己的两个工具（`default_tools_approval_mode = "approve"`）。Codex 会完整读取 `~/.codex/AGENTS.md`，`project_doc_max_bytes` 只限制项目里的 AGENTS.md
 - **Gemini CLI**：在你没信任过的文件夹里，所有 mcp 服务器都是关的，用户级的也一样。vault 规则照样会加载，但要信任这个文件夹之后 `vault_search` 才会出现。如果你让它走代理，Gemini CLI 还会调用它自己内置的模型名，代理得认得这些名字
 - **Qwen Code**：“记住这个”往往会存进 Qwen 自己的记忆（`~/.qwen/memories/`），而不是 vault，就算规则里说了别这样也一样。`aivault sync` 会把这些记忆复制进 vault，所以它们要到下次同步之后才会到你的其他工具，不是马上
-- **Hermes Agent**：`SOUL.md` 是它唯一的全局文件，所以 vault 规则就放在那里，挨着它的人设
+- **Hermes Agent**：`SOUL.md` 是它唯一的全局文件，所以 vault 规则就放在那里，挨着它的人设。`SOUL.md` 超过 `context_file_max_chars` 时，Hermes 会删掉中间部分，小模型上这个值是 20,000 个字符。规则快到这个长度时，`sync` 会在 `~/.hermes/config.yaml` 顶部设置 `context_file_max_chars`，被删掉了也会重新设上。你自己设的值会保留，太小的话 `doctor` 会告诉你
 - **ZCode** 只在 `features.mcp` 打开时才加载 mcp 服务器。只有你从没设置过它，aivault 才会把它打开。你自己设的 `false` 会保留，`doctor` 会告诉你
 - **Neovate** 自己也会读 `~/.claude/CLAUDE.md`，所以连了 Claude Code 的话，它会看到两遍规则
-- **DeepSeek Harness**：`~/.dsh/cordis.patch.yml` 必须保持是一个 yaml 列表，不然 aivault 不会去改它
+- **DeepSeek Harness**：`~/.dsh/cordis.patch.yml` 必须保持是一个 yaml 列表，不然 aivault 不会去改它。dsh 把 `~/.dsh/AGENTS.md` 和所有项目里的 AGENTS.md 一起塞进 64 KB，所以 vault 规则越大，留给项目文件的空间越少
 - **Crush** 的许可证（FSL）是 source-available，不是开源
 - **Gemini CLI** 从 2026-06-18 起不再支持免费账号。用 api key 还是能用
 - 带空格的 vault 路径（比如 icloud 的 `Mobile Documents`）对 Claude Code 的导入没问题。Gemini 和 Qwen 这时拿到的是副本而不是导入，所以改完也要跑 `sync`

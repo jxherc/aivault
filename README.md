@@ -234,7 +234,7 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 **nothing here is guaranteed**
 - every connected tool gets the vault rules and the two vault tools, but the model decides when to call `vault_search` and `vault_remember`. the default rules push hard (search before answering anything about you, save whenever you say "remember"), and most models follow them, but some answers will skip the vault
 - tools that get a copy of the rules (codex, pi, hermes, kimi, dsh and others marked "copy" above) only see your own edits after `aivault sync`, unless autosync is on. a line added with `vault_remember` and `file` updates their copies right away
-- every top-level vault file goes into every tool's context. a big one costs tokens in every session and can push a tool over its size limit (Codex's is 32 KB by default). `doctor` warns about Codex
+- every top-level vault file goes into every tool's context. a big one costs tokens in every session and can push a tool over its size limit. Hermes and DeepSeek Harness have one (see below), and `doctor` warns before either cuts the rules
 - tools load their rules when a session starts. restart them after `init` or `sync`
 - a tool you install after setup isn't connected until you run `aivault init` again
 - a memory a tool saves in its own memory reaches the vault at the next sync, not right away. with autosync on that's within the hour. without it, nothing runs sync for you
@@ -249,13 +249,13 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 **per tool**
 - **Claude Code** also gets two hooks in `~/.claude/settings.json`. when your message flags a mistake or says "remember", one puts a reminder right next to it. the other won't let the turn end until `vault_remember` ran with the right file. it asks once, never twice in a row, and an explicit "don't call any tools" still wins. your own hooks stay as they are, and `aivault remove` takes ours out. other tools only have the rules text
 - **OpenCode**: if your `opencode.json` has a skill allowlist (`"permission": {"skill": {"*": "deny", ...}}`), vault skills not on that list stay blocked. aivault doesn't edit your permission rules: `init` and `doctor` say how many vault skills are blocked, name some, and show the line to add. OpenCode also reads `~/.claude/skills` and `~/.agents/skills`, so it can list a skill twice
-- **Codex**: it blocks mcp calls nobody approved, and a headless run can't ask, so aivault pre-approves its own two tools (`default_tools_approval_mode = "approve"`). Codex also stops reading instructions at 32 KB. if your rules are bigger, raise `project_doc_max_bytes` in `~/.codex/config.toml`. `doctor` follows that setting
+- **Codex**: it blocks mcp calls nobody approved, and a headless run can't ask, so aivault pre-approves its own two tools (`default_tools_approval_mode = "approve"`). Codex reads `~/.codex/AGENTS.md` whole. `project_doc_max_bytes` only caps the AGENTS.md files in your projects
 - **Gemini CLI**: every mcp server is off in a folder you haven't trusted, user-level ones included. the vault rules still load, but `vault_search` only shows up once you trust the folder. if you route it through a proxy, Gemini CLI also calls its own built-in model names, which the proxy has to know
 - **Qwen Code**: "remember this" tends to land in Qwen's own memory (`~/.qwen/memories/`) instead of the vault, even when the rules say otherwise. `aivault sync` copies those memories into the vault, so they reach your other tools after the next sync, not right away
-- **Hermes Agent**: `SOUL.md` is its only global file, so the vault rules go there next to its persona
+- **Hermes Agent**: `SOUL.md` is its only global file, so the vault rules go there next to its persona. Hermes drops the middle of `SOUL.md` past `context_file_max_chars`, which is 20,000 characters on small models. when the rules get near that, `sync` sets `context_file_max_chars` at the top of `~/.hermes/config.yaml`, and sets it again if something removes it. a value you set yourself stays, and `doctor` says if it's too small
 - **ZCode** only loads mcp servers when `features.mcp` is on. aivault turns it on only if you never set it. your own `false` stays, and `doctor` tells you
 - **Neovate** also reads `~/.claude/CLAUDE.md` by itself, so with Claude Code connected it sees the rules twice
-- **DeepSeek Harness**: `~/.dsh/cordis.patch.yml` must stay a yaml list. aivault refuses to edit it otherwise
+- **DeepSeek Harness**: `~/.dsh/cordis.patch.yml` must stay a yaml list. aivault refuses to edit it otherwise. dsh fits `~/.dsh/AGENTS.md` and every project AGENTS.md into 64 KB together, so big vault rules leave less room for project files
 - **Crush**'s license (FSL) is source-available, not open source
 - **Gemini CLI** stopped serving free accounts on 2026-06-18. it still works with an api key
 - a vault path with spaces (like icloud's `Mobile Documents`) works for Claude Code's imports. Gemini and Qwen get a copy instead of an import, so run `sync` after edits there too

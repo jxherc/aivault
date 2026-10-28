@@ -231,18 +231,93 @@ func TestDoctorCatchesProblems(t *testing.T) {
 	}
 }
 
-func TestCodexMax(t *testing.T) {
+func TestLimitFind(t *testing.T) {
+	toml := &limit{key: "project_doc_max_bytes"}
+	for in, want := range map[string]string{
+		"# raised\nproject_doc_max_bytes = 65536\nmodel = \"x\"\n\n[tools]\nproject_doc_max_bytes = 1\n": "65536",
+		"  project_doc_max_bytes=7 # hm\n":           "7",
+		"[profiles.x]\nproject_doc_max_bytes = 99\n": "",
+	} {
+		if got, _ := toml.find([]byte(in)); got != want {
+			t.Fatalf("toml %q: got %q, want %q", in, got, want)
+		}
+	}
+	yml := &limit{key: "context_file_max_chars", yaml: true}
+	for in, want := range map[string]string{
+		"model:\n  context_file_max_chars: 5\ncontext_file_max_chars: 9000\n": "9000",
+		"model:\n  context_file_max_chars: 5\n":                               "",
+		"context_file_max_chars: null\n":                                      "null",
+	} {
+		if got, _ := yml.find([]byte(in)); got != want {
+			t.Fatalf("yaml %q: got %q, want %q", in, got, want)
+		}
+	}
+}
+
+// big rules: hermes gets its cut raised, codex isn't flagged (it reads the
+// global file whole), dsh says when the rules eat its shared budget
+func TestRulesLimits(t *testing.T) {
 	f := newFake(t)
-	lim := codexMax(func(e *Env) string { return e.CodexDir })
-	if lim(f.e) != codexLimit {
-		t.Fatal("default limit wrong")
+	e := f.e
+	vdir := filepath.Join(e.Home, "v")
+	put(t, filepath.Join(vdir, "AGENTS.md"), strings.Repeat("rules rule 规则\n", 2500)) // ~45k chars
+	hdir := hermesDir(e)
+	cfg := filepath.Join(hdir, "config.yaml")
+	orig := "model:\n  default: x\nmcp_servers:\n  other:\n    command: y\n"
+	put(t, cfg, orig)
+
+	s, _ := LoadState(e)
+	if err := Apply(e, s, vdir, []string{"hermes", "codex", "dsh"}, false, io.Discard); err != nil {
+		t.Fatal(err)
 	}
-	put(t, filepath.Join(f.e.CodexDir, "config.toml"), "# raised\nproject_doc_max_bytes = 65536\nmodel = \"x\"\n\n[tools]\nproject_doc_max_bytes = 1\n")
-	if lim(f.e) != 65536 {
-		t.Fatalf("got %d", lim(f.e))
+	if !strings.HasPrefix(get(t, cfg), "# ai-vault:limit:start\ncontext_file_max_chars: 65536\n# ai-vault:limit:end\nmodel:") {
+		t.Fatalf("no limit key on top:\n%s", get(t, cfg))
 	}
-	put(t, filepath.Join(f.e.CodexDir, "config.toml"), "[profiles.x]\nproject_doc_max_bytes = 99\n")
-	if lim(f.e) != codexLimit {
-		t.Fatal("a key inside a table must not count")
+	if bad := Doctor(e, s); len(bad) != 0 {
+		t.Fatalf("doctor: %v", bad)
+	}
+
+	// an app rewrites its config and drops our key: doctor says so, sync puts it back
+	put(t, cfg, string(limitMarks.strip([]byte(get(t, cfg)), "")))
+	if bad := strings.Join(Doctor(e, s), "\n"); !strings.Contains(bad, "cuts it at 20000. run `aivault sync`") {
+		t.Fatalf("doctor missed the dropped key: %s", bad)
+	}
+	if err := RefreshRules(e, s); err != nil {
+		t.Fatal(err)
+	}
+	if !limitMarks.has([]byte(get(t, cfg))) || len(Doctor(e, s)) != 0 {
+		t.Fatalf("refresh didn't put the key back:\n%s", get(t, cfg))
+	}
+
+	// the user's own key wins and ours goes, so there's never two
+	put(t, cfg, get(t, cfg)+"context_file_max_chars: 30000\n")
+	if err := RefreshRules(e, s); err != nil {
+		t.Fatal(err)
+	}
+	if c := get(t, cfg); limitMarks.has([]byte(c)) || strings.Count(c, "context_file_max_chars") != 1 {
+		t.Fatalf("want only the user's key:\n%s", c)
+	}
+	if bad := strings.Join(Doctor(e, s), "\n"); !strings.Contains(bad, "raise context_file_max_chars") {
+		t.Fatalf("doctor should ask to raise the user's key: %s", bad)
+	}
+	put(t, cfg, strings.Replace(get(t, cfg), "context_file_max_chars: 30000\n", "", 1))
+
+	// past dsh's budget
+	put(t, filepath.Join(vdir, "me.md"), strings.Repeat("x", 30000))
+	if err := RefreshRules(e, s); err != nil {
+		t.Fatal(err)
+	}
+	bad := strings.Join(Doctor(e, s), "\n")
+	if !strings.Contains(bad, "every project AGENTS.md into 65536") || strings.Contains(bad, "Codex") || strings.Contains(bad, "SOUL.md") {
+		t.Fatalf("want only the dsh budget problem: %s", bad)
+	}
+
+	// edited since our last write, so remove has to cut our parts out
+	put(t, cfg, get(t, cfg)+"# mine\n")
+	if err := Remove(e, s, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if c := get(t, cfg); c != orig+"# mine\n" {
+		t.Fatalf("hermes config not restored:\n%s", c)
 	}
 }

@@ -74,7 +74,9 @@ checked against current docs on 2026-10-19. these locations move, so doctor shou
 | skills | link each skill into `~/.claude/skills/` | link into `~/.agents/skills/` | reads `~/.agents/skills/` already |
 | mcp | `claude mcp add --scope user` | `[mcp_servers.ai-vault]` table between `# ai-vault:start` / `# ai-vault:end` in config.toml | add an `mcp` entry in opencode.json |
 
-why codex gets a copy: codex doesn't expand `@path` imports in AGENTS.md, so the text has to be there. `aivault sync` refreshes it. codex also stops reading instructions past `project_doc_max_bytes` (32 KiB default), so sync warns when the copy gets near that.
+why codex gets a copy: codex doesn't expand `@path` imports in AGENTS.md, so the text has to be there. `aivault sync` refreshes it. codex reads the global AGENTS.md whole; `project_doc_max_bytes` only caps project files.
+
+some tools cut a long rules file. each tool spec has a `limit` taken from that tool's source: hermes drops the middle of SOUL.md past `context_file_max_chars` (20,000 characters on small models), so sync keeps that key at the top of its config.yaml between `# ai-vault:limit:start` / `# ai-vault:limit:end`. dsh fits all AGENTS.md files into one 64 KB budget and has no simple setting, so doctor only warns.
 
 for claude code, a vault path with spaces needs a backslash before each space in the `@` line. a quoted path doesn't import at all.
 

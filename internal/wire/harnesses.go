@@ -135,6 +135,10 @@ var hermes = build(&spec{
 	},
 	dir:   hermesDir,
 	rules: in(hermesDir, "SOUL.md"), rulesHow: rulesCopy,
+	// SOUL.md loses its middle past context_file_max_chars. unset, that's
+	// 6% of the model's window and never under 20000 chars, so pin it
+	// (agent/prompt_builder.py)
+	limit:   &limit{def: 20000, chars: true, file: in(hermesDir, "config.yaml"), key: "context_file_max_chars", yaml: true},
 	skills:  in(hermesDir, "skills"),
 	mcpFile: in(hermesDir, "config.yaml"), mcpKind: mcpYAML, mcpPath: []string{"mcp_servers"},
 	mcpYAML: func(bin string, args []string) []ykv {
@@ -186,7 +190,7 @@ var oiDir = homeDir("INTERPRETER_HOME", ".openinterpreter")
 var openInterpreter = build(&spec{
 	name: "interpreter", label: "Open Interpreter", bins: []string{"interpreter"},
 	dir:   oiDir,
-	rules: in(oiDir, "AGENTS.md"), rulesHow: rulesCopy, maxRules: codexMax(oiDir),
+	rules: in(oiDir, "AGENTS.md"), rulesHow: rulesCopy,
 	skills:  agentsSkills,
 	mcpFile: in(oiDir, "config.toml"), mcpKind: mcpTOML, mcpPath: []string{"mcp_servers", mcpName},
 })
@@ -236,6 +240,9 @@ var dsh = build(&spec{
 	memories: []memSrc{{files: memFile(func(e *Env) string { return filepath.Join(dshDir(e), "lessons.md") }), split: splitBullets}},
 	dir:      dshDir,
 	rules:    in(dshDir, "AGENTS.md"), rulesHow: rulesCopy,
+	// every AGENTS.md of a session shares one budget, global first
+	// (dsh-agent-instructions maxBytes in dsh-base/cordis.patch.yml)
+	limit:     &limit{def: 65536, shared: true},
 	skills:    agentsSkills,
 	skillFrom: func(e *Env) []string { return []string{filepath.Join(dshDir(e), "skills"), e.AgentsSkills} },
 	yblock:    in(dshDir, "cordis.patch.yml"),

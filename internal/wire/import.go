@@ -338,10 +338,6 @@ func Import(e *Env, s *State, f Found, tools []string, out io.Writer) error {
 	if f.Linked > 0 {
 		fmt.Fprintf(out, "  · left %d skill%s alone: they're links to folders outside these tools\n", f.Linked, plural(f.Linked))
 	}
-	if lim := codexMax(func(e *Env) string { return e.CodexDir })(e); (s.HasTool("codex") || hasStr(tools, "codex")) && func() bool { r, err := vault.Rules(s.Vault); return err == nil && len(r) > lim-4096 }() {
-		r, _ := vault.Rules(s.Vault)
-		fmt.Fprintf(out, "  ! the vault rules are %s now. codex stops reading at %s: trim me.md, or raise project_doc_max_bytes in ~/.codex/config.toml\n", size(len(r)), size(lim))
-	}
 	return s.Save()
 }
 

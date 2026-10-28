@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jxherc/aivault/internal/vault"
 )
@@ -33,7 +36,7 @@ type spec struct {
 
 	rules    func(e *Env) string // global rules file we write a block into. nil = none
 	rulesHow int
-	maxRules func(e *Env) int // bytes the tool stops reading at, nil = no limit
+	limit    *limit // what the tool cuts the rules file at, nil = reads it whole
 
 	// or: the vault files go into a list in the tool's config
 	list     func(e *Env) string // json file
@@ -230,6 +233,9 @@ func build(sp *spec) *Tool {
 			if err := setBlock(s, sp.rules(e), mdMarks, body); err != nil {
 				return err
 			}
+			if err := sp.fitLimit(e, s); err != nil {
+				return err
+			}
 		}
 		if sp.list != nil {
 			f := sp.list(e)
@@ -249,6 +255,9 @@ func build(sp *spec) *Tool {
 				return err
 			}
 			if err := setBlock(s, sp.rules(e), mdMarks, body); err != nil {
+				return err
+			}
+			if err := sp.fitLimit(e, s); err != nil {
 				return err
 			}
 		}
@@ -278,8 +287,27 @@ func build(sp *spec) *Tool {
 	}
 
 	t.Remove = func(e *Env, s *State) error {
+		// the limit key can share a file with another block of ours. undo
+		// drops the file's record, so both go in the same pass
+		lf := ""
+		if sp.limit != nil && sp.limit.file != nil {
+			lf = sp.limit.file(e)
+		}
+		lim := func(f string, b []byte) []byte {
+			if f == lf {
+				return limitMarks.strip(b, "")
+			}
+			return b
+		}
+		sep := func(f string) string {
+			if rec := s.Files[f]; rec != nil {
+				return rec.Sep
+			}
+			return ""
+		}
 		if sp.rules != nil {
-			if err := unBlock(s, sp.rules(e), mdMarks); err != nil {
+			f := sp.rules(e)
+			if err := s.undo(f, func(b []byte) ([]byte, error) { return lim(f, mdMarks.strip(b, sep(f))), nil }); err != nil {
 				return err
 			}
 		}
@@ -295,14 +323,21 @@ func build(sp *spec) *Tool {
 		}
 		for f, y := range sp.yamlEdits(e, s) {
 			if rec := s.Files[f]; rec != nil {
-				key, line := y.key, rec.Line
-				if err := s.undo(f, func(b []byte) ([]byte, error) { return yamlStrip(b, key, line), nil }); err != nil {
+				f, key, line := f, y.key, rec.Line
+				if err := s.undo(f, func(b []byte) ([]byte, error) { return lim(f, yamlStrip(b, key, line)), nil }); err != nil {
 					return err
 				}
 			}
 		}
 		if sp.mcpKind == mcpTOML {
-			return unBlock(s, sp.mcpFile(e), tomlMarks)
+			f := sp.mcpFile(e)
+			if err := s.undo(f, func(b []byte) ([]byte, error) { return lim(f, tomlMarks.strip(b, sep(f))), nil }); err != nil {
+				return err
+			}
+		}
+		if lf != "" {
+			// a file of its own, or one the passes above didn't touch
+			return s.undo(lf, func(b []byte) ([]byte, error) { return limitMarks.strip(b, ""), nil })
 		}
 		return nil
 	}
@@ -322,8 +357,8 @@ func build(sp *spec) *Tool {
 				if want, err := sp.rulesBody(s); err == nil && mdMarks.body(b) != strings.ReplaceAll(strings.Trim(want, "\n"), "\r\n", "\n") {
 					bad = append(bad, p+" has an old copy of the vault rules. run `aivault sync`")
 				}
-				if sp.maxRules != nil && len(b) > sp.maxRules(e)-1024 {
-					bad = append(bad, fmt.Sprintf("%s is %d bytes, %s stops reading at %d", p, len(b), sp.label, sp.maxRules(e)))
+				if sp.limit != nil {
+					bad = append(bad, sp.limit.check(e, sp.label, p, b)...)
 				}
 			}
 		}
@@ -360,6 +395,146 @@ func build(sp *spec) *Tool {
 		return bad
 	}
 	return t
+}
+
+func (sp *spec) fitLimit(e *Env, s *State) error {
+	if sp.limit == nil || sp.limit.file == nil {
+		return nil
+	}
+	b, err := read(sp.rules(e))
+	if err != nil {
+		return err
+	}
+	return sp.limit.fit(e, s, sp.limit.size(b))
+}
+
+// a cap a tool puts on its rules file, from the tool's own source. when
+// the tool has a setting for it, sync raises that setting with a key of our
+// own at the top of the config (top-level keys have to come before any
+// toml [table]). it's set again on every sync, so an app rewriting its
+// config without it doesn't leave the rules cut
+type limit struct {
+	def    int  // what the tool cuts at when the setting isn't there
+	chars  bool // counted in characters, not bytes
+	shared bool // project instruction files share the same budget
+	file   func(e *Env) string
+	key    string
+	yaml   bool // the config is yaml, not toml
+}
+
+var limitMarks = marks{"# ai-vault:limit:start", "# ai-vault:limit:end"}
+
+func (l *limit) size(b []byte) int {
+	if l.chars {
+		return utf8.RuneCount(b)
+	}
+	return len(b)
+}
+
+func (l *limit) unit() string {
+	if l.chars {
+		return "characters"
+	}
+	return "bytes"
+}
+
+// the top-level key in b: its raw value, and whether it's there at all
+func (l *limit) find(b []byte) (string, bool) {
+	top := strings.ReplaceAll(string(b), "\r\n", "\n")
+	sep := `\s*=\s*`
+	if l.yaml {
+		sep = `:[ \t]*` // unindented, so only top-level keys match
+	} else {
+		if i := strings.Index(top, "\n["); i >= 0 {
+			top = top[:i]
+		}
+		if strings.HasPrefix(top, "[") {
+			top = ""
+		}
+		top = regexp.MustCompile(`(?m)^[ \t]+`).ReplaceAllString(top, "")
+	}
+	m := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(l.key) + sep + `([^#\n]*)`).FindStringSubmatch(top)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+// what the tool reads up to right now
+func (l *limit) max(e *Env) int {
+	if l.file == nil {
+		return l.def
+	}
+	b, _ := read(l.file(e))
+	v, ok := l.find(b)
+	if n, err := strconv.Atoi(v); ok && err == nil && n > 0 {
+		return n
+	}
+	return l.def
+}
+
+// room for n, in 32k steps so small edits don't rewrite the config each time
+func need(n int) int {
+	const step = 32 << 10
+	return (n + 16<<10 + step - 1) / step * step
+}
+
+// raises the setting to fit n. drops our key when the default is enough,
+// or when the user set the key themselves: a second one breaks the config
+func (l *limit) fit(e *Env, s *State, n int) error {
+	p := l.file(e)
+	b, err := read(p)
+	if err != nil {
+		return err
+	}
+	rest := limitMarks.strip(b, "")
+	if _, theirs := l.find(rest); theirs || n <= l.def-4096 {
+		if !limitMarks.has(b) {
+			return nil
+		}
+		return s.write(p, rest)
+	}
+	eq := " = "
+	if l.yaml {
+		eq = ": "
+	}
+	body := l.key + eq + strconv.Itoa(max(need(n), l.def))
+	if limitMarks.body(b) == body {
+		return nil
+	}
+	head, tail := []byte(nil), rest
+	if l.yaml && bytes.HasPrefix(rest, []byte("---")) {
+		// a yaml document start stays first
+		i := bytes.IndexByte(rest, '\n') + 1
+		if i == 0 {
+			i = len(rest)
+		}
+		head, tail = rest[:i], rest[i:]
+	}
+	out := append(append(append([]byte{}, head...), limitMarks.render(body, nl(b))...), tail...)
+	return s.write(p, out)
+}
+
+func (l *limit) check(e *Env, label, p string, b []byte) []string {
+	n, lim := l.size(b), l.max(e)
+	if n <= lim-1024 {
+		return nil
+	}
+	msg := fmt.Sprintf("%s is %d %s, %s cuts it at %d", p, n, l.unit(), label, lim)
+	switch {
+	case l.file == nil && l.shared:
+		msg = fmt.Sprintf("%s is %d %s, and %s fits it and every project AGENTS.md into %d. trim the vault rules", p, n, l.unit(), label, lim)
+	case l.file == nil:
+		msg += ". trim the vault rules"
+	default:
+		f, _ := read(l.file(e))
+		if _, theirs := l.find(limitMarks.strip(f, "")); theirs {
+			msg += fmt.Sprintf(". raise %s in %s to %d", l.key, l.file(e), need(n))
+		} else {
+			msg += ". run `aivault sync`"
+		}
+	}
+	return []string{msg}
 }
 
 func applyJSON(s *State, ops map[string][]jsonOp) error {
