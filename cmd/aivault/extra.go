@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,7 +18,7 @@ import (
 
 // aivault add [--file remember] text: what vault_remember does, from a terminal
 func cmdAdd(args []string) error {
-	fs := flag.NewFlagSet("add", flag.ExitOnError)
+	fs := newFlags("add")
 	file := fs.String("file", "", "also add the line to this vault file, like remember or mistakes")
 	tags := fs.String("tags", "", "comma list of topic words")
 	text := strings.TrimSpace(strings.Join(parseAnywhere(fs, args), " "))
@@ -101,7 +100,7 @@ func cmdOpen(args []string) error {
 // aivault watch: refresh the tools' copies whenever a rules file changes,
 // and do a full sync every so often so the tools' own memories come in too
 func cmdWatch(args []string) error {
-	fs := flag.NewFlagSet("watch", flag.ExitOnError)
+	fs := newFlags("watch")
 	every := fs.Duration("sync", 0, "also run a full sync this often, like 1h. 0 = never")
 	logTo := fs.String("log", "", "append output to this file instead of printing it")
 	fs.Parse(args)

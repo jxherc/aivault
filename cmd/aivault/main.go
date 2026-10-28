@@ -38,7 +38,7 @@ var helpGroups = []struct {
 	{"keeping in sync", [][2]string{
 		{"sync", "refresh the tools and pull in anything new from them"},
 		{"autosync on|off", "keep everything in sync in the background"},
-		{"watch", "the same, in this terminal"},
+		{"watch", "keep everything in sync while this terminal is open"},
 		{"import", "move existing rules and skills into the vault"},
 	}},
 	{"using the vault", [][2]string{
@@ -80,36 +80,42 @@ func main() {
 		return
 	}
 	var err error
+	args := os.Args[2:]
 	switch os.Args[1] {
 	case "init":
-		err = cmdInit(os.Args[2:])
+		err = cmdInit(args)
 	case "doctor", "status", "health", "check":
-		err = cmdDoctor(os.Args[2:])
+		err = cmdDoctor(args)
 	case "sync":
-		err = cmdSync()
+		if rest := plain("sync", args); len(rest) > 0 {
+			err = fmt.Errorf("sync takes no arguments, got %q", rest[0])
+		} else {
+			err = cmdSync()
+		}
 	case "import":
-		err = cmdImport(os.Args[2:])
+		err = cmdImport(args)
 	case "remove":
-		err = cmdRemove(os.Args[2:])
+		err = cmdRemove(plain("remove", args))
 	case "search":
-		err = cmdSearch(os.Args[2:])
+		err = cmdSearch(args)
 	case "mcp":
-		err = cmdMCP(os.Args[2:])
+		err = cmdMCP(args)
 	case "add":
-		err = cmdAdd(os.Args[2:])
+		err = cmdAdd(args)
 	case "open":
-		err = cmdOpen(os.Args[2:])
+		err = cmdOpen(plain("open", args))
 	case "watch":
-		err = cmdWatch(os.Args[2:])
+		err = cmdWatch(args)
 	case "autosync":
-		err = cmdAutosync(os.Args[2:])
+		err = cmdAutosync(plain("autosync", args))
 	case "update", "upgrade":
-		err = cmdUpdate(os.Args[2:])
+		err = cmdUpdate(args)
 	case "completion":
-		err = cmdCompletion(os.Args[2:])
+		err = cmdCompletion(plain("completion", args))
 	case "hook":
-		err = cmdHook(os.Args[2:])
+		err = cmdHook(args)
 	case "version", "--version", "-v":
+		plain("version", args)
 		fmt.Println(curVersion())
 	case "help", "--help", "-h":
 		printHelp()
@@ -133,6 +139,46 @@ func main() {
 // exit 1 without a message, when the output already explained it
 var errQuiet = errors.New("failed")
 
+// every command reads its args through one of these, so -h shows the
+// command's help and a flag it doesn't have is an error, not a tool name
+func newFlags(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() { cmdHelp(fs) }
+	return fs
+}
+
+// args of a command that has no flags of its own
+func plain(name string, args []string) []string {
+	fs := newFlags(name)
+	fs.Parse(args)
+	return fs.Args()
+}
+
+func cmdHelp(fs *flag.FlagSet) {
+	use, desc := fs.Name(), ""
+	for _, g := range helpGroups {
+		for _, c := range g.cmds {
+			if strings.Fields(c[0])[0] == fs.Name() {
+				use, desc = c[0], c[1]
+			}
+		}
+	}
+	fmt.Println(accent.Render("aivault " + use))
+	if desc != "" {
+		fmt.Println("  " + wrap(desc, width()-2, 2))
+	}
+	fs.VisitAll(func(f *flag.Flag) {
+		// go reads a `quoted` word in a usage as the flag's value name
+		arg, usage := flag.UnquoteUsage(f)
+		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+			arg = ""
+		}
+		name := strings.TrimSpace("--" + f.Name + " " + arg)
+		fmt.Println("  " + accent.Render(fmt.Sprintf("%-16s", name)) + " " + wrap(usage, width()-19, 19))
+	})
+}
+
 func load() (*wire.Env, *wire.State, error) {
 	e, err := wire.DefaultEnv()
 	if err != nil {
@@ -153,12 +199,12 @@ func expand(p, home string) string {
 }
 
 func cmdInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs := newFlags("init")
 	yes := fs.Bool("yes", false, "don't ask, use flags and defaults")
 	dir := fs.String("vault", "", "vault folder (default ~/ai-vault)")
 	tools := fs.String("tools", "", "comma list: claude,codex,opencode (default: the ones found)")
 	imp := fs.Bool("import", false, "move the tools' existing rules and skills into the vault")
-	auto := fs.Bool("autosync", false, "keep the tools in sync in the background (see `aivault autosync`)")
+	auto := fs.Bool("autosync", false, "keep the tools in sync in the background, like aivault autosync on")
 	fs.Parse(args)
 
 	e, s, err := load()
@@ -350,7 +396,7 @@ func runPainted(f func(io.Writer) error) error {
 }
 
 func cmdImport(args []string) error {
-	fs := flag.NewFlagSet("import", flag.ExitOnError)
+	fs := newFlags("import")
 	yes := fs.Bool("yes", false, "don't ask")
 	fs.Parse(args)
 	e, s, err := load()
@@ -424,7 +470,7 @@ func vaultDir(flagVal string) (string, error) {
 }
 
 func cmdSearch(args []string) error {
-	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	fs := newFlags("search")
 	dir := fs.String("vault", "", "vault folder")
 	limit := fs.Int("n", 8, "max results")
 	q := strings.Join(parseAnywhere(fs, args), " ")
@@ -540,7 +586,7 @@ func highlight(s, q string) string {
 }
 
 func cmdMCP(args []string) error {
-	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	fs := newFlags("mcp")
 	dir := fs.String("vault", "", "vault folder (default: the one from init)")
 	fs.Parse(args)
 	vd, err := vaultDir(*dir)

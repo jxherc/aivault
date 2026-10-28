@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -105,7 +104,7 @@ func managedBy(exe string) string {
 }
 
 func cmdUpdate(args []string) error {
-	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	fs := newFlags("update")
 	check := fs.Bool("check", false, "only say whether there's a newer version")
 	force := fs.Bool("force", false, "update even a dev build or a package-manager install")
 	fs.Parse(args)

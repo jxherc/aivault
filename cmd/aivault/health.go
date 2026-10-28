@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -43,7 +42,7 @@ func (r *report) count(status string) int {
 }
 
 func cmdDoctor(args []string) error {
-	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	fs := newFlags("doctor")
 	fix := fs.Bool("fix", false, "fix what can be fixed (reconnects tools, refreshes copies), then check again")
 	asJSON := fs.Bool("json", false, "print the report as json")
 	quick := fs.Bool("quick", false, "skip the live mcp test and the update check")
