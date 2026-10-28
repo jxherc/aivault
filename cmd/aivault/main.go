@@ -5,10 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/mattn/go-isatty"
@@ -19,44 +22,63 @@ import (
 
 var version = "dev"
 
-const usage = `aivault: one folder of rules, skills and memory for all your ai tools
+// the help screen. each group is a heading and its commands
+var helpGroups = []struct {
+	title string
+	cmds  [][2]string
+}{
+	{"setup", [][2]string{
+		{"init", "set up the vault and connect your tools"},
+		{"remove [tool...]", "disconnect tools (all if none given)"},
+	}},
+	{"health", [][2]string{
+		{"doctor", "check everything: vault, mcp server, every tool. --fix repairs, --json for scripts"},
+		{"update", "update aivault itself. --check only looks"},
+	}},
+	{"keeping in sync", [][2]string{
+		{"sync", "refresh the tools and pull in anything new from them"},
+		{"autosync on|off", "keep everything in sync in the background"},
+		{"watch", "the same, in this terminal"},
+		{"import", "move existing rules and skills into the vault"},
+	}},
+	{"using the vault", [][2]string{
+		{"search <query>", "search memories, skills and index lists"},
+		{"add [--file f] text", "save a memory. --file remember adds it to remember.md too"},
+		{"open [file]", "open the vault, or one of its files"},
+	}},
+	{"other", [][2]string{
+		{"completion <shell>", "shell completion: bash, zsh, fish, powershell"},
+		{"mcp", "the mcp server your tools launch"},
+		{"version", ""},
+	}},
+}
 
-setup
-  aivault init                 set up the vault and connect your tools
-  aivault remove [tool...]     disconnect tools (all if none given)
-
-health
-  aivault doctor               check everything: vault, mcp server, every tool
-                               (--fix repairs what it can, --json for scripts)
-  aivault update               update aivault itself (--check only looks)
-
-keeping in sync
-  aivault sync                 refresh the tools and pull in anything new from them
-  aivault autosync on|off      keep everything in sync in the background
-  aivault watch                the same, in this terminal
-  aivault import               move existing rules and skills into the vault
-
-using the vault
-  aivault search <query>       search memories, skills and index lists
-  aivault add [--file f] text  save a memory (--file remember adds it to remember.md too)
-  aivault open [file]          open the vault, or one of its files
-
-other
-  aivault completion <shell>   shell completion: bash, zsh, fish, powershell
-  aivault mcp                  the mcp server your tools launch
-  aivault version
-
-tools: claude, codex, opencode, gemini, kilo, crush, goose, pi, hermes,
-       cline, zed, warp, interpreter, aider, qwen, kimi, dsh, zcode,
-       minimax, kode, neovate
-`
+func printHelp() {
+	w := width()
+	fmt.Println(bold.Render(accent.Render("aivault")) + "  one folder of rules, skills and memory for all your ai tools")
+	fmt.Println()
+	fmt.Println("  " + accent.Render("aivault") + dim.Render(" on its own shows what's connected and what's in the vault"))
+	for _, g := range helpGroups {
+		fmt.Println()
+		fmt.Println(bold.Render(g.title))
+		for _, c := range g.cmds {
+			fmt.Println(strings.TrimRight("  "+accent.Render(fmt.Sprintf("%-20s", c[0]))+" "+wrap(c[1], w-23, 23), " "))
+		}
+	}
+	fmt.Println()
+	fmt.Println(bold.Render("tools"))
+	fmt.Println("  " + wrap(strings.Join(wire.Names(), ", "), w-2, 2))
+}
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Print(usage)
-		os.Exit(2)
-	}
 	cleanOld()
+	if len(os.Args) < 2 {
+		if err := cmdHome(); err != nil {
+			fmt.Fprintln(os.Stderr, bad.Render("error:"), err)
+			os.Exit(1)
+		}
+		return
+	}
 	var err error
 	switch os.Args[1] {
 	case "init":
@@ -90,16 +112,26 @@ func main() {
 	case "version", "--version", "-v":
 		fmt.Println(curVersion())
 	case "help", "--help", "-h":
-		fmt.Print(usage)
+		printHelp()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", os.Args[1], usage)
+		fmt.Fprintf(os.Stderr, "no command %q.", os.Args[1])
+		if m := didYouMean(os.Args[1], commands); m != "" {
+			fmt.Fprintf(os.Stderr, " did you mean %s?", accent.Render("aivault "+m))
+		}
+		fmt.Fprintln(os.Stderr, " "+dim.Render("aivault help lists them all"))
 		os.Exit(2)
 	}
+	if err == errQuiet {
+		os.Exit(1)
+	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, bad.Render("error:"), codes(err.Error(), out.NewStyle()))
 		os.Exit(1)
 	}
 }
+
+// exit 1 without a message, when the output already explained it
+var errQuiet = errors.New("failed")
 
 func load() (*wire.Env, *wire.State, error) {
 	e, err := wire.DefaultEnv()
@@ -171,19 +203,20 @@ func cmdInit(args []string) error {
 	}
 
 	vdir = expand(vdir, e.Home)
-	fmt.Printf("vault: %s\n", vdir)
-	if err := wire.Apply(e, s, vdir, picked, *imp, os.Stdout); err != nil {
+	fmt.Println(dim.Render("vault ") + tildePath(vdir))
+	if err := runPainted(func(w io.Writer) error { return wire.Apply(e, s, vdir, picked, *imp, w) }); err != nil {
 		return err
 	}
 	if *auto {
 		if err := autosyncOn(e); err != nil {
-			fmt.Println("couldn't turn on autosync:", err)
+			fmt.Println("  "+mark("fail")+" couldn't turn on autosync:", err)
 		} else {
-			fmt.Println("autosync on: edits to the vault reach every tool by themselves.")
+			fmt.Println("  " + mark("ok") + " autosync on: edits to the vault reach every tool by themselves")
 		}
 	}
-	fmt.Println("\ndone. restart your ai tools so they load the vault. `aivault doctor` checks everything.")
-	fmt.Println(newToolNote)
+	fmt.Println()
+	fmt.Println(mark("ok") + " done. restart your ai tools so they load the vault. " + accent.Render("aivault doctor") + " checks everything")
+	fmt.Println("  " + codes(newToolNote, dim))
 	return nil
 }
 
@@ -298,7 +331,22 @@ func cmdSync() error {
 	}
 	// sync pulls in whatever the tools gained since: rules text written
 	// outside our block, new skill folders, and their own memories
-	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, os.Stdout)
+	start := time.Now()
+	err = runPainted(func(w io.Writer) error {
+		return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, w)
+	})
+	if err == nil {
+		fmt.Println(dim.Render(fmt.Sprintf("synced %d tool%s in %.1f s", len(s.Tools), plural(len(s.Tools)), time.Since(start).Seconds())))
+	}
+	return err
+}
+
+// runs a wire step with its report lines painted
+func runPainted(f func(io.Writer) error) error {
+	p := painted(os.Stdout)
+	err := f(p)
+	p.Flush()
+	return err
 }
 
 func cmdImport(args []string) error {
@@ -336,7 +384,9 @@ func cmdImport(args []string) error {
 			return errors.New("cancelled, nothing changed")
 		}
 	}
-	return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, os.Stdout)
+	return runPainted(func(w io.Writer) error {
+		return wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), true, w)
+	})
 }
 
 func cmdRemove(args []string) error {
@@ -348,7 +398,15 @@ func cmdRemove(args []string) error {
 		fmt.Println("nothing is wired.")
 		return nil
 	}
-	return wire.Remove(e, s, args, os.Stdout)
+	return runPainted(func(w io.Writer) error { return wire.Remove(e, s, args, w) })
+}
+
+// a path inside the vault as vault-relative, anything else with ~
+func vaultRel(vd, p string) string {
+	if rel, err := filepath.Rel(vd, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return tildePath(p)
 }
 
 func vaultDir(flagVal string) (string, error) {
@@ -369,29 +427,116 @@ func cmdSearch(args []string) error {
 	fs := flag.NewFlagSet("search", flag.ExitOnError)
 	dir := fs.String("vault", "", "vault folder")
 	limit := fs.Int("n", 8, "max results")
-	fs.Parse(args)
+	q := strings.Join(parseAnywhere(fs, args), " ")
 	vd, err := vaultDir(*dir)
 	if err != nil {
 		return err
 	}
-	hits, err := vault.Search(vd, strings.Join(fs.Args(), " "), *limit)
+	hits, err := vault.Search(vd, q, *limit)
 	if err != nil {
 		return err
 	}
 	if len(hits) == 0 {
-		fmt.Println("nothing found.")
+		fmt.Println("nothing found for " + bold.Render(q))
+		return nil
 	}
+	w := width()
 	for _, h := range hits {
-		meta := h.Kind
-		if len(h.Tags) > 0 {
-			meta += " [" + strings.Join(h.Tags, ", ") + "]"
-		}
+		meta := []string{accent.Render(h.Kind)}
 		if h.From != "" {
-			meta += " from " + h.From
+			meta = append(meta, h.From)
 		}
-		fmt.Printf("%s\n  %s\n  %s\n\n", meta, strings.ReplaceAll(h.Text, "\n", "\n  "), h.Path)
+		if t, ok := parseCreated(h.Created); ok {
+			meta = append(meta, short(time.Since(t))+" ago")
+		}
+		if len(h.Tags) > 0 && h.Kind != "index" {
+			meta = append(meta, strings.Join(h.Tags, ", "))
+		}
+		lines := snippet(h.Text, q, 3)
+		if h.Kind == "index" {
+			// "files / school / cs (...): the entry". the headings go up top
+			if head, body, ok := strings.Cut(h.Text, ": "); ok {
+				meta = append(meta, cut(aliasRe.ReplaceAllString(head, ""), w-12))
+				lines = strings.Split(wrap(tildeText(body), w-2, 0), "\n")
+				lines = lines[:min(3, len(lines))]
+			}
+		}
+		fmt.Println(strings.Join(meta, dim.Render(" · ")))
+		for _, l := range lines {
+			fmt.Println("  " + highlight(cut(tildeText(l), w-2), q))
+		}
+		fmt.Println("  " + dim.Render(vaultRel(vd, h.Path)))
+		fmt.Println()
 	}
+	fmt.Println(dim.Render(fmt.Sprintf("%d result%s. ", len(hits), plural(len(hits)))) + accent.Render("aivault open <path>") + dim.Render(" opens one"))
 	return nil
+}
+
+// the "(ics4u, cs, ...)" alias lists in index headings
+var aliasRe = regexp.MustCompile(` \([^)]*\)`)
+
+// flags can come after the words too: `aivault search cs -n 3`
+func parseAnywhere(fs *flag.FlagSet, args []string) []string {
+	var words []string
+	for {
+		fs.Parse(args)
+		args = fs.Args()
+		if len(args) == 0 {
+			return words
+		}
+		words = append(words, args[0])
+		args = args[1:]
+	}
+}
+
+// up to n lines of text, the ones with the query's words first
+func snippet(text, q string, n int) []string {
+	words := strings.Fields(strings.ToLower(q))
+	var hit, rest []string
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || l == "---" || strings.HasPrefix(l, "… (cut") {
+			continue
+		}
+		low := strings.ToLower(l)
+		matched := false
+		for _, w := range words {
+			matched = matched || strings.Contains(low, w)
+		}
+		if matched {
+			hit = append(hit, l)
+		} else {
+			rest = append(rest, l)
+		}
+	}
+	out := append(hit, rest...)
+	return out[:min(n, len(out))]
+}
+
+// the query's words in bold accent. matching is case-insensitive
+func highlight(s, q string) string {
+	words := strings.Fields(strings.ToLower(q))
+	if len(words) == 0 {
+		return s
+	}
+	low := strings.ToLower(s)
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		n := 0
+		for _, w := range words {
+			if strings.HasPrefix(low[i:], w) && len(w) > n {
+				n = len(w)
+			}
+		}
+		if n > 0 {
+			b.WriteString(bold.Inherit(accent).Render(s[i : i+n]))
+			i += n
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
 }
 
 func cmdMCP(args []string) error {

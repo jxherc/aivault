@@ -93,6 +93,7 @@ vault 顶层的每个 `.md` 都属于每个工具都会加载的规则：先 AGE
 
 | | |
 | --- | --- |
+| `aivault` | 连了哪些工具、vault 里有什么、最近存了什么 |
 | `aivault init` | 设置 vault，连接工具 |
 | `aivault doctor` | 全面检查（别名：`status`、`health`） |
 | `aivault doctor --fix` | 重新连接出问题的工具，刷新过期的副本，然后再检查一遍 |
@@ -107,6 +108,36 @@ vault 顶层的每个 `.md` 都属于每个工具都会加载的规则：先 AGE
 | `aivault update` | 更新 aivault 本身（`--check` 只看不装） |
 | `aivault completion <shell>` | bash、zsh、fish 或 powershell 的 tab 补全 |
 | `aivault mcp` | 工具启动的 mcp 服务器 |
+
+### 首页
+
+直接运行 `aivault`：
+
+```
+$ aivault
+aivault  0.2.0
+
+  vault    ~/ai-vault
+  tools    ✓ Claude Code  ✓ Codex  ✓ OpenCode
+           not connected: Gemini CLI. aivault init
+
+  memory   229, 12 this week
+           claude 140 · codex 61 · opencode 28
+  skills   219
+  index    3 lists, 105 entries
+  rules    6 files, 22 KB, loaded by every tool each session
+  synced   2 h ago, autosync on
+
+  saved    ▁▁▃▁▂▁▁▂▁▁▁▁▁▅▁▁▂▇▂▁█▁▆▁▁▁▁▅▁▂▃▁▂▁▁▁▃▁▁▂▁▁▅▃▁▂▂▆▄▁█▁▁▄▁▁
+           sep 3                                              today
+  latest   2 h    claude  the deploy script needs node 24, not 26
+           5 h    codex   school files are in ~/Documents/school
+           1 d    claude  short commit titles, no trailers
+
+  aivault help   aivault search <words>   aivault doctor
+```
+
+柱状图是最近 8 周每天存下的记忆数。它只读本地文件，所以一下就出来。
 
 ### doctor
 
@@ -128,13 +159,17 @@ mcp
 
 tools
   ✓ Claude Code       rules and mcp in place
-  ✗ Codex             ~/.codex/AGENTS.md has an old copy of the vault rules. run `aivault sync`
-  · Gemini CLI        installed but not connected. `aivault init` connects it
+  ✗ Codex             ~/.codex/AGENTS.md has an old copy of the vault rules. run aivault sync
+  · Gemini CLI        installed but not connected. aivault init connects it
   ✓ skill links       543 links
 
 sync
   · last sync         2 h ago
-  · autosync          off. `aivault autosync on` keeps every tool current by itself
+  · autosync          off. aivault autosync on keeps every tool current by itself
+
+8 ok · 1 problem
+
+aivault doctor --fix reconnects tools and refreshes copies
 ```
 
 mcp 检查是真跑的：doctor 用和你的工具一样的方式启动服务器，列出它的工具，再跑一次搜索。`--json` 输出同样的报告给脚本用，`--quick` 跳过 mcp 测试和更新检查。有东西坏了，它会以非零状态码退出。

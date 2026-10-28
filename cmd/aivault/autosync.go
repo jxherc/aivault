@@ -36,19 +36,20 @@ func cmdAutosync(args []string) error {
 			return err
 		}
 		_, d := autosyncState(e)
-		fmt.Println("autosync on: rules reach every tool within seconds of an edit, and a full sync runs every hour.", d)
+		fmt.Println(mark("ok") + " autosync on. vault edits reach every tool within seconds, and a full sync runs every hour")
+		fmt.Println("  " + dim.Render(d))
 	case "off":
 		if err := autosyncOff(e); err != nil {
 			return err
 		}
-		fmt.Println("autosync off")
+		fmt.Println(mark("ok") + " autosync off")
 	case "status":
 		on, d := autosyncState(e)
 		if !on {
-			fmt.Println("off. `aivault autosync on` to start it")
+			fmt.Println(mark("info") + " off. " + accent.Render("aivault autosync on") + " starts it")
 			return nil
 		}
-		fmt.Println("on.", d)
+		fmt.Println(mark("ok") + " on. " + dim.Render(d))
 	default:
 		return errors.New("usage: aivault autosync on|off|status")
 	}

@@ -112,16 +112,27 @@ func cmdUpdate(args []string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	set, stop := spin("asking github for the latest release")
+	defer stop()
 	r, err := latestRelease(ctx)
 	if err != nil {
 		return err
 	}
 	cur, latest := curVersion(), strings.TrimPrefix(r.Tag, "v")
 	if !isDev(cur) && !newer(latest, cur) && !*force {
-		fmt.Printf("up to date (%s)\n", cur)
+		stop()
+		fmt.Println(mark("ok") + " up to date " + dim.Render("("+cur+")"))
 		return nil
 	}
-	fmt.Printf("current %s, latest %s\n", cur, latest)
+	if *check {
+		stop()
+		if isDev(cur) {
+			fmt.Println(mark("info") + " this is a dev build. the latest release is " + latest)
+		} else {
+			fmt.Println(mark("warn") + " " + latest + " is out, you have " + cur + ". " + accent.Render("aivault update") + " gets it")
+		}
+		return nil
+	}
 	if *check {
 		return nil
 	}
@@ -152,6 +163,7 @@ func cmdUpdate(args []string) error {
 	if archURL == "" || sumURL == "" {
 		return fmt.Errorf("release %s has no %s", r.Tag, name)
 	}
+	set("downloading " + name)
 	arch, err := fetch(ctx, archURL)
 	if err != nil {
 		return err
@@ -170,7 +182,9 @@ func cmdUpdate(args []string) error {
 	if err := replaceExe(exe, bin); err != nil {
 		return err
 	}
-	fmt.Printf("updated %s to %s. restart your ai tools so they launch the new mcp server.\n", exe, latest)
+	stop()
+	fmt.Printf("%s updated %s → %s\n", mark("ok"), cur, bold.Render(latest))
+	fmt.Println("  " + dim.Render("restart your ai tools so they launch the new mcp server"))
 	return nil
 }
 

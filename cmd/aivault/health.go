@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattn/go-isatty"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/jxherc/aivault/internal/vault"
@@ -54,21 +53,21 @@ func cmdDoctor(args []string) error {
 	if err != nil {
 		return err
 	}
-	r := health(e, s, *quick)
+	r := checkAll(e, s, *quick, *asJSON)
 	if *fix && r.count("fail") > 0 && s.Vault != "" {
 		if !*asJSON {
 			printReport(r, os.Stdout)
-			fmt.Println("\nfixing...")
+			fmt.Println("\n" + bold.Render("fixing"))
 		}
 		out := io.Discard
 		if !*asJSON {
-			out = os.Stdout
+			out = painted(os.Stdout)
 		}
 		ferr := wire.Apply(e, s, s.Vault, append([]string{}, s.Tools...), false, out)
 		if ferr != nil && !*asJSON {
-			fmt.Println("  still broken:", ferr)
+			fmt.Println("  "+mark("fail")+" still broken:", ferr)
 		}
-		r = health(e, s, *quick)
+		r = checkAll(e, s, *quick, *asJSON)
 		if !*asJSON {
 			fmt.Println()
 		}
@@ -82,14 +81,24 @@ func cmdDoctor(args []string) error {
 	}
 	if n := r.count("fail"); n > 0 {
 		if !*fix && !*asJSON {
-			fmt.Println("\n`aivault doctor --fix` reconnects tools and refreshes copies.")
+			fmt.Println("\n" + accent.Render("aivault doctor --fix") + " reconnects tools and refreshes copies")
 		}
-		return fmt.Errorf("%d problem(s)", n)
+		return errQuiet // the report already said it
 	}
 	return nil
 }
 
-func health(e *wire.Env, s *wire.State, quick bool) *report {
+// health with a spinner, unless the output is for a script
+func checkAll(e *wire.Env, s *wire.State, quick, quiet bool) *report {
+	if quiet {
+		return health(e, s, quick, func(string) {})
+	}
+	set, stop := spin("checking")
+	defer stop()
+	return health(e, s, quick, set)
+}
+
+func health(e *wire.Env, s *wire.State, quick bool, step func(string)) *report {
 	r := &report{}
 
 	// the binary and updates
@@ -100,6 +109,7 @@ func health(e *wire.Env, s *wire.State, quick bool) *report {
 		r.add("aivault", "binary", "ok", e.Bin)
 	}
 	if !quick {
+		step("asking github for the latest release")
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		rel, err := latestRelease(ctx)
 		cancel()
@@ -123,6 +133,7 @@ func health(e *wire.Env, s *wire.State, quick bool) *report {
 	}
 
 	// the vault folder
+	step("reading the vault")
 	if fi, err := os.Stat(s.Vault); err != nil || !fi.IsDir() {
 		r.add("vault", "folder", "fail", s.Vault+" is missing")
 		return r
@@ -169,6 +180,7 @@ func health(e *wire.Env, s *wire.State, quick bool) *report {
 
 	// the mcp server, for real: start it the way the tools do and ask it things
 	if !quick {
+		step("starting the mcp server the way your tools do")
 		if d, err := mcpProbe(e.Bin, s.Vault); err != nil {
 			r.add("mcp", "server", "fail", err.Error())
 		} else {
@@ -177,6 +189,7 @@ func health(e *wire.Env, s *wire.State, quick bool) *report {
 	}
 
 	// every connected tool
+	step("checking each tool")
 	for _, name := range s.Tools {
 		t := wire.Find(name)
 		if t == nil {
@@ -286,13 +299,11 @@ func ago(d time.Duration) string {
 }
 
 func printReport(r *report, w io.Writer) {
-	color := isatty.IsTerminal(os.Stdout.Fd()) && os.Getenv("NO_COLOR") == ""
-	mark := map[string]string{"ok": "✓", "warn": "!", "fail": "✗", "info": "·"}
-	paint := map[string]string{"ok": "32", "warn": "33", "fail": "31", "info": "90"}
-	width := 0
+	cols := 0
 	for _, c := range r.Checks {
-		width = max(width, len(c.Name))
+		cols = max(cols, len(c.Name))
 	}
+	tw := width()
 	sec := ""
 	for _, c := range r.Checks {
 		if c.Section != sec {
@@ -300,13 +311,32 @@ func printReport(r *report, w io.Writer) {
 				fmt.Fprintln(w)
 			}
 			sec = c.Section
-			fmt.Fprintln(w, sec)
+			fmt.Fprintln(w, bold.Render(sec))
 		}
-		m := mark[c.Status]
-		if color {
-			m = "\x1b[" + paint[c.Status] + "m" + m + "\x1b[0m"
+		detail := wrap(tildeText(c.Detail), tw-cols-6, cols+6)
+		if c.Status == "info" {
+			detail = codes(detail, dim)
+		} else {
+			detail = codes(detail, out.NewStyle())
 		}
-		fmt.Fprintf(w, "  %s %-*s  %s\n", m, width, c.Name, c.Detail)
+		fmt.Fprintf(w, "  %s %-*s  %s\n", mark(c.Status), cols, c.Name, detail)
 	}
-	fmt.Fprintf(w, "\n%d ok, %d warnings, %d problems\n", r.count("ok"), r.count("warn"), r.count("fail"))
+	fmt.Fprintln(w)
+	parts := []string{good.Render(fmt.Sprintf("%d ok", r.count("ok")))}
+	if n := r.count("warn"); n > 0 {
+		parts = append(parts, warnC.Render(fmt.Sprintf("%d warning%s", n, plural(n))))
+	}
+	if n := r.count("fail"); n > 0 {
+		parts = append(parts, bad.Render(fmt.Sprintf("%d problem%s", n, plural(n))))
+	} else {
+		parts = append(parts, "no problems")
+	}
+	fmt.Fprintln(w, strings.Join(parts, dim.Render(" · ")))
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

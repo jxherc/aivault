@@ -22,8 +22,7 @@ func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ExitOnError)
 	file := fs.String("file", "", "also add the line to this vault file, like remember or mistakes")
 	tags := fs.String("tags", "", "comma list of topic words")
-	fs.Parse(args)
-	text := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	text := strings.TrimSpace(strings.Join(parseAnywhere(fs, args), " "))
 	if text == "" {
 		return errors.New(`usage: aivault add [--file remember] "text"`)
 	}
@@ -48,7 +47,7 @@ func cmdAdd(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("added to", p)
+		fmt.Println(mark("ok") + " added to " + vaultRel(s.Vault, p))
 		tl = append(tl, *file)
 		if filepath.Dir(p) == filepath.Clean(s.Vault) {
 			refresh(s.Vault)
@@ -58,7 +57,7 @@ func cmdAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("saved", m.Path)
+	fmt.Println(mark("ok") + " saved " + vaultRel(s.Vault, m.Path))
 	return nil
 }
 

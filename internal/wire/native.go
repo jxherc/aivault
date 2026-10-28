@@ -232,7 +232,7 @@ func syncNative(e *Env, s *State, tools []string, out io.Writer) syncReport {
 			r.added++
 		}
 		if err := writeAtomic(p, []byte(body)); err != nil {
-			fmt.Fprintf(out, "  warning: can't write %s: %v\n", p, err)
+			fmt.Fprintf(out, "  ! can't write %s: %v\n", p, err)
 			continue
 		}
 		byTool[m.tool]++
@@ -243,10 +243,10 @@ func syncNative(e *Env, s *State, tools []string, out io.Writer) syncReport {
 			names = append(names, t)
 		}
 		sort.Strings(names)
-		fmt.Fprintf(out, "  synced memories from %s: %d new, %d updated\n", strings.Join(names, ", "), r.added, r.updated)
+		fmt.Fprintf(out, "  ✓ synced memories from %s: %d new, %d updated\n", strings.Join(names, ", "), r.added, r.updated)
 	}
 	if len(r.skipped) > 0 {
-		fmt.Fprintf(out, "  left out %d memor%s that look like they hold a password or key. copy what you want by hand from:\n", r.skippedN, map[bool]string{true: "y", false: "ies"}[r.skippedN == 1])
+		fmt.Fprintf(out, "  ! left out %d memor%s that look like they hold a password or key. copy what you want by hand from:\n", r.skippedN, map[bool]string{true: "y", false: "ies"}[r.skippedN == 1])
 		for _, p := range r.skipped {
 			fmt.Fprintln(out, "    "+tilde(p, e.Home))
 		}

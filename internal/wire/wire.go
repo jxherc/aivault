@@ -62,22 +62,22 @@ func Apply(e *Env, s *State, vaultDir string, tools []string, imp bool, out io.W
 			return serr
 		}
 		if err != nil {
-			fmt.Fprintf(out, "  %-9s problem: %v\n", t.Name, err)
+			fmt.Fprintf(out, "  ✗ %s: %v\n", t.Label, err)
 			failed = append(failed, t.Name)
 			continue
 		}
-		fmt.Fprintf(out, "  %-9s ok\n", t.Name)
+		fmt.Fprintf(out, "  ✓ %s\n", t.Label)
 		if t.Note != "" {
-			fmt.Fprintf(out, "            note: %s\n", t.Note)
+			fmt.Fprintf(out, "    · %s\n", t.Note)
 		}
 		if t.Hints != nil {
 			for _, h := range t.Hints(e, s) {
-				fmt.Fprintf(out, "            note: %s\n", h)
+				fmt.Fprintf(out, "    · %s\n", h)
 			}
 		}
 	}
 	for _, w := range syncLinks(e, s) {
-		fmt.Fprintln(out, "  warning:", w)
+		fmt.Fprintln(out, "  !", w)
 	}
 	s.Synced = time.Now()
 	if err := s.Save(); err != nil {
@@ -127,7 +127,7 @@ func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 			return fmt.Errorf("unknown tool %q", name)
 		}
 		if !s.HasTool(name) {
-			fmt.Fprintf(out, "  %-9s wasn't wired\n", name)
+			fmt.Fprintf(out, "  · %s wasn't connected\n", name)
 			continue
 		}
 		err := t.Remove(e, s)
@@ -138,10 +138,10 @@ func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(out, "  %-9s problem: %v\n", name, err)
+			fmt.Fprintf(out, "  ✗ %s: %v\n", t.Label, err)
 			errs = append(errs, name)
 		} else {
-			fmt.Fprintf(out, "  %-9s removed\n", name)
+			fmt.Fprintf(out, "  ✓ %s disconnected\n", t.Label)
 		}
 		// drop it from the list either way, the error tells the user what's left
 		var keep []string
@@ -153,7 +153,7 @@ func Remove(e *Env, s *State, tools []string, out io.Writer) error {
 		s.Tools = keep
 	}
 	for _, w := range append(syncLinks(e, s), restoreSkills(s)...) {
-		fmt.Fprintln(out, "  warning:", w)
+		fmt.Fprintln(out, "  !", w)
 	}
 	if len(s.Tools) == 0 {
 		s.Vault = ""

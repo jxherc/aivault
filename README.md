@@ -93,6 +93,7 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 
 | | |
 | --- | --- |
+| `aivault` | what's connected, what's in the vault and what got saved lately |
 | `aivault init` | set up the vault and connect tools |
 | `aivault doctor` | check everything (aliases: `status`, `health`) |
 | `aivault doctor --fix` | reconnect broken tools and refresh stale copies, then check again |
@@ -107,6 +108,36 @@ it's plain markdown, so obsidian or any editor works. to use it on more than one
 | `aivault update` | update aivault itself (`--check` only looks) |
 | `aivault completion <shell>` | tab completion for bash, zsh, fish or powershell |
 | `aivault mcp` | the mcp server the tools launch |
+
+### home screen
+
+`aivault` on its own:
+
+```
+$ aivault
+aivault  0.2.0
+
+  vault    ~/ai-vault
+  tools    ✓ Claude Code  ✓ Codex  ✓ OpenCode
+           not connected: Gemini CLI. aivault init
+
+  memory   229, 12 this week
+           claude 140 · codex 61 · opencode 28
+  skills   219
+  index    3 lists, 105 entries
+  rules    6 files, 22 KB, loaded by every tool each session
+  synced   2 h ago, autosync on
+
+  saved    ▁▁▃▁▂▁▁▂▁▁▁▁▁▅▁▁▂▇▂▁█▁▆▁▁▁▁▅▁▂▃▁▂▁▁▁▃▁▁▂▁▁▅▃▁▂▂▆▄▁█▁▁▄▁▁
+           sep 3                                              today
+  latest   2 h    claude  the deploy script needs node 24, not 26
+           5 h    codex   school files are in ~/Documents/school
+           1 d    claude  short commit titles, no trailers
+
+  aivault help   aivault search <words>   aivault doctor
+```
+
+the bar chart is memories saved per day over the last 8 weeks. it only reads local files, so it shows up right away.
 
 ### doctor
 
@@ -128,13 +159,17 @@ mcp
 
 tools
   ✓ Claude Code       rules and mcp in place
-  ✗ Codex             ~/.codex/AGENTS.md has an old copy of the vault rules. run `aivault sync`
-  · Gemini CLI        installed but not connected. `aivault init` connects it
+  ✗ Codex             ~/.codex/AGENTS.md has an old copy of the vault rules. run aivault sync
+  · Gemini CLI        installed but not connected. aivault init connects it
   ✓ skill links       543 links
 
 sync
   · last sync         2 h ago
-  · autosync          off. `aivault autosync on` keeps every tool current by itself
+  · autosync          off. aivault autosync on keeps every tool current by itself
+
+8 ok · 1 problem
+
+aivault doctor --fix reconnects tools and refreshes copies
 ```
 
 the mcp check is real: doctor starts the server the same way your tools do, lists its tools and runs a search. `--json` prints the same report for scripts, `--quick` skips the mcp test and the update check. it exits non-zero when something is broken.

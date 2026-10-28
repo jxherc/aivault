@@ -318,29 +318,29 @@ func Import(e *Env, s *State, f Found, tools []string, out io.Writer) error {
 				if err := moveOut(s, p, r.Tools[j], vault.RulesFiles(s.Vault)[1]); err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "  moved %s into me.md\n", tilde(p, e.Home))
+				fmt.Fprintf(out, "  ✓ moved %s into me.md\n", tilde(p, e.Home))
 			}
 		}
 	}
 
 	for _, sk := range f.Skills {
 		if err := moveSkill(s, sk); err != nil {
-			fmt.Fprintf(out, "  warning: skill %s: %v\n", sk.Name, err)
+			fmt.Fprintf(out, "  ! skill %s: %v\n", sk.Name, err)
 			continue
 		}
 	}
 	if n := f.unique(); n > 0 {
-		fmt.Fprintf(out, "  moved %d skill%s into the vault\n", n, plural(n))
+		fmt.Fprintf(out, "  ✓ moved %d skill%s into the vault\n", n, plural(n))
 	}
 	for _, sk := range f.Skipped {
-		fmt.Fprintln(out, "  skipped:", sk)
+		fmt.Fprintln(out, "  · skipped:", sk)
 	}
 	if f.Linked > 0 {
-		fmt.Fprintf(out, "  left %d skill%s alone: they're links to folders outside these tools\n", f.Linked, plural(f.Linked))
+		fmt.Fprintf(out, "  · left %d skill%s alone: they're links to folders outside these tools\n", f.Linked, plural(f.Linked))
 	}
 	if lim := codexMax(func(e *Env) string { return e.CodexDir })(e); (s.HasTool("codex") || hasStr(tools, "codex")) && func() bool { r, err := vault.Rules(s.Vault); return err == nil && len(r) > lim-4096 }() {
 		r, _ := vault.Rules(s.Vault)
-		fmt.Fprintf(out, "  warning: the vault rules are %s now. codex stops reading at %s: trim me.md, or raise project_doc_max_bytes in ~/.codex/config.toml\n", size(len(r)), size(lim))
+		fmt.Fprintf(out, "  ! the vault rules are %s now. codex stops reading at %s: trim me.md, or raise project_doc_max_bytes in ~/.codex/config.toml\n", size(len(r)), size(lim))
 	}
 	return s.Save()
 }
