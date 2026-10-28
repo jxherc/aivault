@@ -26,14 +26,12 @@ irm https://raw.githubusercontent.com/jxherc/aivault/main/install.ps1 | iex
 
 | | |
 | --- | --- |
-| homebrew | `brew install --cask jxherc/tap/aivault` |
-| scoop | `scoop bucket add jxherc https://github.com/jxherc/scoop-bucket`，然后 `scoop install aivault` |
 | go | `go install github.com/jxherc/aivault/cmd/aivault@latest` |
 | 手动 | 从 [releases 页面](https://github.com/jxherc/aivault/releases) 下载适合你电脑的文件，比如 `aivault-macos-apple-silicon.tar.gz` |
 
-用脚本或手动装的，`aivault update` 会原地更新（同样会校验 checksum）。brew 和 scoop 走各自的包管理器更新，`aivault update` 会告诉你该跑什么命令。
+`aivault update` 会原地更新（同样会校验 checksum）。
 
-mac 版二进制还没签名。安装脚本和 brew cask 都不会带上 quarantine 标记，所以 macos 不会拦它。用浏览器下载的文件需要先跑 `xattr -d com.apple.quarantine aivault`。
+mac 版二进制还没签名。安装脚本不会带上 quarantine 标记，所以 macos 不会拦它。用浏览器下载的文件需要先跑 `xattr -d com.apple.quarantine aivault`。
 
 ## 配置
 

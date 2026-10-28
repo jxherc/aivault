@@ -26,14 +26,12 @@ other ways:
 
 | | |
 | --- | --- |
-| homebrew | `brew install --cask jxherc/tap/aivault` |
-| scoop | `scoop bucket add jxherc https://github.com/jxherc/scoop-bucket` then `scoop install aivault` |
 | go | `go install github.com/jxherc/aivault/cmd/aivault@latest` |
 | by hand | download the file for your computer from the [releases page](https://github.com/jxherc/aivault/releases), like `aivault-macos-apple-silicon.tar.gz` |
 
-`aivault update` updates a script or by-hand install in place (it checks the checksum too). brew and scoop update through their own package manager, and `aivault update` tells you the command.
+`aivault update` updates it in place (it checks the checksum too).
 
-the mac binary isn't signed yet. the install script and the brew cask both avoid the quarantine flag, so macos doesn't block it. a file downloaded with a browser needs `xattr -d com.apple.quarantine aivault`.
+the mac binary isn't signed yet. the install script avoids the quarantine flag, so macos doesn't block it. a file downloaded with a browser needs `xattr -d com.apple.quarantine aivault`.
 
 ## setup
 
