@@ -19,7 +19,7 @@ func TestRulesFilesOrder(t *testing.T) {
 	for _, p := range RulesFiles(d) {
 		got = append(got, filepath.Base(p))
 	}
-	if strings.Join(got, " ") != "AGENTS.md me.md Dont.md remember.md" {
+	if strings.Join(got, " ") != "AGENTS.md me.md Dont.md mistakes.md remember.md" {
 		t.Fatalf("rules files: %v", got)
 	}
 }
@@ -42,7 +42,11 @@ func TestAddNote(t *testing.T) {
 	if p, err := AddNote(d, "files", "cs worksheet: /x.pdf", ""); err != nil || filepath.Base(filepath.Dir(p)) != "index" {
 		t.Fatalf("index note: %v %s", err, p)
 	}
-	if _, err := AddNote(d, "mistakes", "x", ""); err == nil || !strings.Contains(err.Error(), "files, me, remember") {
+	// a new vault has mistakes.md, since the hooks and rules save there
+	if p, err := AddNote(d, "mistakes", "a -> b", ""); err != nil || filepath.Base(p) != "mistakes.md" {
+		t.Fatalf("mistakes note: %v %s", err, p)
+	}
+	if _, err := AddNote(d, "mistakse", "x", ""); err == nil || !strings.Contains(err.Error(), "files, me, mistakes, remember") {
 		t.Fatalf("missing file should fail and list the real ones: %v", err)
 	}
 	if _, err := AddNote(d, "../me", "x", ""); err == nil {

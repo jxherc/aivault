@@ -79,11 +79,14 @@ aivault init --yes --vault ~/ai-vault --tools claude,codex,qwen --autosync
 ai-vault/
   AGENTS.md     rules every tool loads
   me.md         your preferences
-  *.md          any other file you put here loads too (say remember.md, mistakes.md)
+  mistakes.md   mistakes an ai already made, each with the rule that stops a repeat
+  *.md          any other file you put here loads too (say remember.md)
   index/        lookup lists, searched line by line (where your files are, what your nicknames mean)
   memory/       one .md file per memory
   skills/       <name>/SKILL.md
 ```
+
+你报告 bug 或者指出错误时，规则会让工具先找到根本原因，把同一个原因造成的地方全部修好，再把教训写进 mistakes.md。每个工具都会加载这个文件，所以同样的错误不该在任何一个工具里再出现。
 
 vault 顶层的每个 `.md` 都属于每个工具都会加载的规则：先 AGENTS.md，再 me.md，其余按 a 到 z 排。这些文件要写短，因为每个工具每次会话都会把它们全读一遍。大一点的列表放进 `index/`：`vault_search` 只从里面返回匹配的那一行，连同它上面的标题，所以就算是一份 300 行的文件清单，问“我的化学第 4 单元练习卷”也只会给你一个路径。
 
@@ -247,6 +250,7 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 - `init --import` 会移动规则文本和 skill 文件夹。如果 skill 是指向别处的链接，或者已经有另一个同名的 skill，它就不动这些 skill。看清它输出了什么
 
 **各个工具**
+- **Claude Code** 还会在 `~/.claude/settings.json` 里多两个 hook。你的消息指出错误、报告 bug 或者说“记住”时，一个会把提醒放在消息旁边。另一个在 `vault_remember` 用对文件跑过之前，不让这一轮结束。它只问一次，不会连着问两次，你明确说“别调用任何工具”时也以你为准。你自己的 hook 原样保留，`aivault remove` 会把我们的拿掉。其他工具只有规则文本
 - **OpenCode**：如果你的 `opencode.json` 里有 skill 白名单（`"permission": {"skill": {"*": "deny", ...}}`），不在名单上的 vault skill 会一直被拦着。aivault 不会改你的权限规则：`init` 和 `doctor` 会告诉你有多少个 vault skill 被拦了，列出其中几个，并给出要加的那一行。OpenCode 也会读 `~/.claude/skills` 和 `~/.agents/skills`，所以同一个 skill 可能列出两次
 - **Codex**：它会拦下没人批准过的 mcp 调用，而 headless 运行时没法询问，所以 aivault 预先批准了自己的两个工具（`default_tools_approval_mode = "approve"`）。Codex 会完整读取 `~/.codex/AGENTS.md`，`project_doc_max_bytes` 只限制项目里的 AGENTS.md
 - **Gemini CLI**：在你没信任过的文件夹里，所有 mcp 服务器都是关的，用户级的也一样。vault 规则照样会加载，但要信任这个文件夹之后 `vault_search` 才会出现。如果你让它走代理，Gemini CLI 还会调用它自己内置的模型名，代理得认得这些名字

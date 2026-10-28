@@ -79,11 +79,14 @@ the tool files end up holding only the ai vault block. `aivault remove` puts the
 ai-vault/
   AGENTS.md     rules every tool loads
   me.md         your preferences
-  *.md          any other file you put here loads too (say remember.md, mistakes.md)
+  mistakes.md   mistakes an ai already made, each with the rule that stops a repeat
+  *.md          any other file you put here loads too (say remember.md)
   index/        lookup lists, searched line by line (where your files are, what your nicknames mean)
   memory/       one .md file per memory
   skills/       <name>/SKILL.md
 ```
+
+when you report a bug or point out a mistake, the rules tell the tool to find the root cause, fix every place it applies, and add the lesson to mistakes.md. every tool loads that file, so the same mistake shouldn't come back in any of them.
 
 every `.md` at the top of the vault is part of the rules every tool loads: AGENTS.md, then me.md, then the rest a to z. keep them short, since every tool reads all of them every session. bigger lists belong in `index/`: `vault_search` returns the single matching line from them, with the headings above it, so a 300-line list of your files still answers "my chem module 4 worksheet" with one path.
 
@@ -247,7 +250,7 @@ aivault wires the vault in. it can't make a model use it. read this before you r
 - `init --import` moves rules text and skill folders. it leaves skills alone when they're links to somewhere else, or when a different skill already has the same name. read what it prints
 
 **per tool**
-- **Claude Code** also gets two hooks in `~/.claude/settings.json`. when your message flags a mistake or says "remember", one puts a reminder right next to it. the other won't let the turn end until `vault_remember` ran with the right file. it asks once, never twice in a row, and an explicit "don't call any tools" still wins. your own hooks stay as they are, and `aivault remove` takes ours out. other tools only have the rules text
+- **Claude Code** also gets two hooks in `~/.claude/settings.json`. when your message flags a mistake, reports a bug or says "remember", one puts a reminder right next to it. the other won't let the turn end until `vault_remember` ran with the right file. it asks once, never twice in a row, and an explicit "don't call any tools" still wins. your own hooks stay as they are, and `aivault remove` takes ours out. other tools only have the rules text
 - **OpenCode**: if your `opencode.json` has a skill allowlist (`"permission": {"skill": {"*": "deny", ...}}`), vault skills not on that list stay blocked. aivault doesn't edit your permission rules: `init` and `doctor` say how many vault skills are blocked, name some, and show the line to add. OpenCode also reads `~/.claude/skills` and `~/.agents/skills`, so it can list a skill twice
 - **Codex**: it blocks mcp calls nobody approved, and a headless run can't ask, so aivault pre-approves its own two tools (`default_tools_approval_mode = "approve"`). Codex reads `~/.codex/AGENTS.md` whole. `project_doc_max_bytes` only caps the AGENTS.md files in your projects
 - **Gemini CLI**: every mcp server is off in a folder you haven't trusted, user-level ones included. the vault rules still load, but `vault_search` only shows up once you trust the folder. if you route it through a proxy, Gemini CLI also calls its own built-in model names, which the proxy has to know

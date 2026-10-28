@@ -32,6 +32,8 @@ func TestStopHook(t *testing.T) {
 		{"remember saved by prefix", jl(p("remember that i use tabs"), saveRem), false},
 		{"other session's message", jl(p("go on"), `{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"<cross-session-message from=\"x\">fixed. the missed grep is saved as its own mistakes.md line</cross-session-message>"}]}}`), false},
 		{"user names the file", jl(p("can you clean up mistakes.md")), false},
+		{"bug report, no lesson", jl(p("the export button is broken"), toolResult), true},
+		{"bug report, lesson saved", jl(p("the export button is broken"), saveMist), false},
 		{"mid-turn message from the user", jl(p("go on"), `{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"The user sent a new message while you were working:\nyou made a mistake there"}]}}`), true},
 	} {
 		if got := unsaved(strings.NewReader(c.transcript)) != ""; got != c.block {
@@ -49,6 +51,14 @@ func TestPromptNudge(t *testing.T) {
 		"make the font bigger please":     "",
 		"the misty mountains, keep going": "",
 		"tidy up mistakes.md please":      "",
+		"the save button is broken":       "root cause",
+		"search doesn't work on ipad":     "root cause",
+		"it crashes when i open settings": "root cause",
+		"tests fail on windows":           "root cause",
+		"登录页面报错了":                         "root cause",
+		"add error handling to the api":   "",
+		"write a debug log":               "",
+		"don't work on the docs today":    "",
 	} {
 		got := promptNudge(in)
 		if (want == "") != (got == "") || !strings.Contains(got, want) {

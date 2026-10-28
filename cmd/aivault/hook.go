@@ -13,20 +13,24 @@ import (
 
 // claude code hooks. the rules ask models to save mistakes and "remember
 // this", but a busy model forgets. these make it hard to forget:
-//   prompt: when the user's message flags a mistake or says remember, the
-//           reminder lands right next to the message
+//   prompt: when the user's message flags a mistake, reports a bug or says
+//           remember, the reminder lands right next to the message
 //   stop:   a turn that had one can't end until vault_remember ran with the
 //           right file. it blocks once, never twice in a row
 
 var (
 	// typos too: "mistka", "mistkae"
-	mistakeRe  = regexp.MustCompile(`(?i)\bmi\w{0,2}st?\w{0,2}k\w*|learn from (this|that|it|the|your)|(don'?t|never) (make|do) (that|this|it) again|why did you|you (broke|messed|screwed|forgot)|still (broken|not working)|(isn'?t|not) fixed|错误|搞错|别再`)
+	mistakeRe = regexp.MustCompile(`(?i)\bmi\w{0,2}st?\w{0,2}k\w*|learn from (this|that|it|the|your)|(don'?t|never) (make|do) (that|this|it) again|why did you|you (broke|messed|screwed|forgot)|still (broken|not working)|(isn'?t|not) fixed|错误|搞错|别再`)
+	// a bug report is a mistake too, just not named one: "x is broken"
+	bugRe      = regexp.MustCompile(`(?i)\bbugs?\b|\bbuggy\b|\bbroken\b|\bcrash(es|ed|ing)?\b|(doesn'?t|does not|won'?t|didn'?t) work\b|(isn'?t|is not|stopped|not) working\b|\b(throws?|threw|throwing|getting|got|gives?|giving|shows?|showing) (an? |this |that )?(error|exception)\b|\bfail(s|ed|ing)?\b|\bregress(ion|ed)?\b|\bglitch|报错|坏了|崩了|崩溃|用不了|不能用|不工作`)
 	rememberRe = regexp.MustCompile(`(?i)\bremember\b|from now on|记住|以后都`)
 	// naming the file isn't flagging a mistake: "check mistakes.md"
 	fileRe = regexp.MustCompile(`(?i)\bmistakes?\.md\b`)
 )
 
 func flagsMistake(s string) bool { return mistakeRe.MatchString(fileRe.ReplaceAllString(s, "")) }
+
+func reportsBug(s string) bool { return bugRe.MatchString(s) }
 
 func cmdHook(args []string) error {
 	if len(args) == 0 {
@@ -68,6 +72,8 @@ func promptNudge(p string) string {
 	switch {
 	case flagsMistake(p):
 		return `aivault: the user is pointing out a mistake. before you go on, call vault_remember with file "mistakes": what went wrong, then "->" and the rule that stops it happening again. if you don't know the cause yet, save what happened now and save the cause when you find it. don't write a date, the tool adds one.`
+	case reportsBug(p):
+		return `aivault: this looks like a bug report. find the root cause, then fix every place with that cause, not just the one the user saw. once you know the cause, call vault_remember with file "mistakes": what went wrong, then "->" and the rule that stops it happening again, written for the cause so it covers every case like this one. don't write a date, the tool adds one.`
 	case rememberRe.MatchString(p):
 		return `aivault: the user wants this remembered. call vault_remember with file "remember" now, in one short line, before you answer. saying "noted" saves nothing.`
 	}
@@ -171,6 +177,8 @@ func unsaved(r io.Reader) string {
 	switch {
 	case flagsMistake(said) && !t.saved["mistakes"] && !t.saved["dont"]:
 		return `aivault: the user pointed out a mistake this turn and it isn't in the vault yet. call vault_remember with file "mistakes" now: what went wrong -> the rule that stops it happening again (no date, the tool adds it). if the cause is still unknown, save what happened and say so. if the user wasn't talking about a mistake at all, just end.`
+	case reportsBug(said) && !t.saved["mistakes"] && !t.saved["dont"]:
+		return `aivault: the user reported a bug this turn and no lesson is in the vault yet. if you found the cause, call vault_remember with file "mistakes" now: what went wrong -> the rule that stops it happening again, for the cause, not just this case. if the cause is still unknown, save what happened and say so. if it wasn't a bug report, or nothing an ai did caused it, just end.`
 	case rememberRe.MatchString(said) && !t.saved["*"]:
 		return `aivault: the user asked you to remember something this turn and nothing was saved. call vault_remember with file "remember" now, one short line. if they didn't mean a lasting rule, just end.`
 	}
