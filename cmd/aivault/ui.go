@@ -206,21 +206,33 @@ func paintLine(l string) string {
 	return l
 }
 
+// st.Render one line at a time. lipgloss pads every line of a multi-line
+// string to the widest one, which leaves trailing spaces after wrapped text
+func paint(st lipgloss.Style, s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = st.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // `command` spans in accent, the rest in base. the backticks go
 func codes(s string, base lipgloss.Style) string {
 	parts := strings.Split(s, "`")
 	if len(parts) < 3 {
-		return base.Render(s)
+		return paint(base, s)
 	}
 	var b strings.Builder
 	for i, p := range parts {
 		switch {
 		case i%2 == 1 && i < len(parts)-1:
-			b.WriteString(accent.Render(p))
+			b.WriteString(paint(accent, p))
 		case i%2 == 1:
-			b.WriteString(base.Render("`" + p)) // unpaired
+			b.WriteString(paint(base, "`"+p)) // unpaired
 		default:
-			b.WriteString(base.Render(p))
+			b.WriteString(paint(base, p))
 		}
 	}
 	return b.String()

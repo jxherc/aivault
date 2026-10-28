@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 	"testing"
 	"time"
 
@@ -108,4 +110,15 @@ func TestSpinStopTwice(t *testing.T) {
 	_, stop := spin("x")
 	stop()
 	stop()
+}
+
+func TestPaintNoPadding(t *testing.T) {
+	st := lipgloss.NewStyle().Bold(true)
+	for _, got := range []string{paint(st, "a long line\nshort"), codes("a long line\nshort `x`", st)} {
+		for _, l := range strings.Split(got, "\n") {
+			if strings.HasSuffix(l, " ") {
+				t.Fatalf("trailing space in %q", got)
+			}
+		}
+	}
 }

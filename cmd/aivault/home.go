@@ -65,7 +65,7 @@ func cmdHome() error {
 	}
 	if len(h.unwired) > 0 {
 		items := append([]string{"not connected: " + h.unwired[0]}, h.unwired[1:]...)
-		row("", dim.Render(wrapItems(items, ", ", w-11, 11))+dim.Render(". ")+accent.Render("aivault init"))
+		row("", paint(dim, wrapItems(items, ", ", w-11, 11))+dim.Render(". ")+accent.Render("aivault init"))
 	}
 	fmt.Println()
 
@@ -75,7 +75,7 @@ func cmdHome() error {
 	}
 	row("memory", mem)
 	if src := sources(h.mems, 3); len(src) > 0 {
-		row("", dim.Render(wrapItems(src, " · ", w-11, 11)))
+		row("", paint(dim, wrapItems(src, " · ", w-11, 11)))
 	}
 	row("skills", fmt.Sprint(h.skills))
 	row("index", fmt.Sprintf("%d lists, %d entries", h.lists, h.entries))
