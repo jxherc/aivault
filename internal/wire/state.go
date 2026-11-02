@@ -40,6 +40,9 @@ type FileRec struct {
 	Tool    string   `json:"tool,omitempty"`
 	Line    string   `json:"line,omitempty"`  // yaml: the user's line we rewrote, like `mcp_servers: {}`
 	Added   []string `json:"added,omitempty"` // json keys we set only because they were missing
+	// someone else changed the file between two of our writes, so the
+	// backup no longer holds all of their content and undo has to strip
+	Mixed bool `json:"mixed,omitempty"`
 }
 
 type ImportRec struct {
@@ -143,6 +146,8 @@ func (s *State) write(p string, data []byte) error {
 			rec.Backup = bp
 		}
 		s.Files[p] = rec
+	} else if cur, _ := read(p); cur != nil && sum(cur) != rec.Sum {
+		rec.Mixed = true
 	}
 	if err := writeAtomic(p, data); err != nil {
 		return err
@@ -159,8 +164,9 @@ func (s *State) backupDir() (string, error) {
 	return s.backup, os.MkdirAll(s.backup, 0o755)
 }
 
-// undo takes our change out of p. if nobody touched the file since our last
-// write, the original comes back byte for byte. otherwise strip cuts out only our part
+// undo takes our change out of p. if nobody else ever touched the file
+// since our first write, the original comes back byte for byte. otherwise
+// strip cuts out only our part
 func (s *State) undo(p string, strip func([]byte) ([]byte, error)) error {
 	rec, ok := s.Files[p]
 	if !ok {
@@ -173,18 +179,18 @@ func (s *State) undo(p string, strip func([]byte) ([]byte, error)) error {
 	switch {
 	case cur == nil:
 		// already gone, nothing to do
-	case sum(cur) == rec.Sum && rec.Created:
+	case sum(cur) == rec.Sum && !rec.Mixed && rec.Created:
 		if err := os.Remove(p); err != nil {
 			return err
 		}
-	case sum(cur) == rec.Sum && rec.Link != "":
+	case sum(cur) == rec.Sum && !rec.Mixed && rec.Link != "":
 		if err := os.Remove(p); err != nil {
 			return err
 		}
 		if err := os.Symlink(rec.Link, p); err != nil {
 			return err
 		}
-	case sum(cur) == rec.Sum && rec.Backup != "":
+	case sum(cur) == rec.Sum && !rec.Mixed && rec.Backup != "":
 		orig, err := os.ReadFile(rec.Backup)
 		if err != nil {
 			return fmt.Errorf("backup for %s is missing: %w", p, err)

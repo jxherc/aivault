@@ -175,11 +175,39 @@ func (sp *spec) rulesBody(s *State) (string, error) {
 
 func (sp *spec) tomlTable(e *Env, s *State) string {
 	args, _ := json.Marshal(mcpArgs(s)) // a json string array is a valid toml array
-	t := fmt.Sprintf("[%s]\ncommand = %s\nargs = %s", strings.Join(sp.mcpPath, "."), tomlStr(e.Bin), args)
+	t := fmt.Sprintf("%s\ncommand = %s\nargs = %s", sp.tomlHeader(), tomlStr(e.Bin), args)
 	for _, l := range sp.tomlExtra {
 		t += "\n" + l
 	}
 	return t
+}
+
+func (sp *spec) tomlHeader() string { return "[" + strings.Join(sp.mcpPath, ".") + "]" }
+
+var tomlTableRe = regexp.MustCompile(`^\[\[?[^\[\]=]+\]\]?\s*(#.*)?$`)
+
+// codex adds new tables at the end of config.toml ([tui], [projects."..."]).
+// when our block is last in the file they land inside it, and rewriting or
+// cutting the block would delete them. this moves every table after ours out
+// past the end marker, where they're the tool's own again
+func tomlEvict(b []byte, header string) []byte {
+	s, e := tomlMarks.region(b)
+	if s < 0 {
+		return b
+	}
+	lines := strings.Split(tomlMarks.body(b), "\n")
+	for i := 1; i < len(lines); i++ {
+		if l := strings.TrimSpace(lines[i]); l == header || !tomlTableRe.MatchString(l) {
+			continue
+		}
+		eol := nl(b)
+		theirs := strings.Trim(strings.Join(lines[i:], "\n"), "\n")
+		out := append([]byte{}, b[:s]...)
+		out = append(out, tomlMarks.render(strings.Join(lines[:i], "\n"), eol)...)
+		out = append(out, eol+strings.ReplaceAll(theirs, "\n", eol)+eol...)
+		return append(out, b[e:]...)
+	}
+	return b
 }
 
 func build(sp *spec) *Tool {
@@ -273,9 +301,15 @@ func build(sp *spec) *Tool {
 			if err != nil {
 				return err
 			}
+			header := sp.tomlHeader()
+			if ev := tomlEvict(b, header); !bytes.Equal(ev, b) {
+				if err := s.write(f, ev); err != nil {
+					return err
+				}
+				b = ev
+			}
 			// someone already has a table with our name outside the block.
 			// a duplicate would stop the tool from starting
-			header := "[" + strings.Join(sp.mcpPath, ".") + "]"
 			if bytes.Contains(tomlMarks.strip(b, ""), []byte(header)) {
 				return fmt.Errorf("%s already has %s. remove it and run again", f, header)
 			}
@@ -331,7 +365,10 @@ func build(sp *spec) *Tool {
 		}
 		if sp.mcpKind == mcpTOML {
 			f := sp.mcpFile(e)
-			if err := s.undo(f, func(b []byte) ([]byte, error) { return lim(f, tomlMarks.strip(b, sep(f))), nil }); err != nil {
+			strip := func(b []byte) ([]byte, error) {
+				return lim(f, tomlMarks.strip(tomlEvict(b, sp.tomlHeader()), sep(f))), nil
+			}
+			if err := s.undo(f, strip); err != nil {
 				return err
 			}
 		}
@@ -388,7 +425,7 @@ func build(sp *spec) *Tool {
 			b, _ := read(f)
 			if !tomlMarks.has(b) {
 				bad = append(bad, f+" has no ai-vault mcp server")
-			} else if tomlMarks.body(b) != sp.tomlTable(e, s) {
+			} else if tomlMarks.body(tomlEvict(b, sp.tomlHeader())) != sp.tomlTable(e, s) {
 				bad = append(bad, f+": the ai-vault mcp entry is out of date. run `aivault sync`")
 			}
 		}

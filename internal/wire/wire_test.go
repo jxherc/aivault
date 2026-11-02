@@ -118,7 +118,8 @@ func TestApplyRemoveRestoresFiles(t *testing.T) {
 	if c := get(t, codexMD); !strings.Contains(c, "vault_search") {
 		t.Fatalf("codex md has no rules copy:\n%s", c)
 	}
-	if c := get(t, codexCfg); !strings.Contains(c, "[mcp_servers.ai-vault]") || !strings.HasPrefix(c, origCfg) {
+	// a whole line: [[mcp_servers.ai-vault]] contains the same text and breaks codex
+	if c := get(t, codexCfg); !strings.Contains(c, "\n[mcp_servers.ai-vault]\n") || !strings.HasPrefix(c, origCfg) {
 		t.Fatalf("codex cfg:\n%s", c)
 	}
 	oc := get(t, ocCfg)
@@ -206,6 +207,40 @@ func TestCodexRefusesDuplicateTable(t *testing.T) {
 	s, _ := LoadState(f.e)
 	if err := Apply(f.e, s, filepath.Join(f.e.Home, "v"), []string{"codex"}, false, io.Discard); err == nil {
 		t.Fatal("expected an error for a duplicate mcp table")
+	}
+}
+
+// codex appends new tables at the end of config.toml, which is inside our
+// block when it's last. seen with [tui] on codex 0.159.2
+func TestCodexTablesInsideOurBlock(t *testing.T) {
+	f := newFake(t)
+	e := f.e
+	vdir := filepath.Join(e.Home, "v")
+	cfg := filepath.Join(e.CodexDir, "config.toml")
+	put(t, cfg, "model = \"x\"\n")
+	s, _ := LoadState(e)
+	if err := Apply(e, s, vdir, []string{"codex"}, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	theirs := "[tui]\nscreen_reader_detection_done = true\n\n[projects.\"/a b\"]\ntrust_level = \"trusted\"\n"
+	c := get(t, cfg)
+	put(t, cfg, strings.Replace(c, "# ai-vault:end", "\n"+theirs+"# ai-vault:end", 1))
+
+	if got := strings.Join(codex.Check(e, s), "\n"); strings.Contains(got, "out of date") {
+		t.Fatalf("doctor calls codex's own tables out of date:\n%s", got)
+	}
+	if err := Apply(e, s, vdir, []string{"codex"}, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	c = get(t, cfg)
+	if !strings.Contains(c, theirs) || strings.Index(c, "[tui]") < strings.Index(c, "# ai-vault:end") {
+		t.Fatalf("sync lost or kept codex's tables in our block:\n%s", c)
+	}
+	if err := Remove(e, s, []string{"codex"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if c = get(t, cfg); !strings.Contains(c, theirs) || strings.Contains(c, "ai-vault") {
+		t.Fatalf("remove:\n%s", c)
 	}
 }
 
