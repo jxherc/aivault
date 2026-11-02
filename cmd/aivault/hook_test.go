@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -95,5 +98,230 @@ func TestPromptNudge(t *testing.T) {
 		if (want == "") != (got == "") || !strings.Contains(got, want) {
 			t.Errorf("%q: %q", in, got)
 		}
+	}
+}
+
+// runs `aivault hook <name>` the way claude code does: json on stdin, json
+// (or nothing) on stdout. returns the additionalContext it handed over
+func runHook(t *testing.T, name string, in map[string]any) string {
+	t.Helper()
+	dir := t.TempDir()
+	b, _ := json.Marshal(in)
+	inF := filepath.Join(dir, "in")
+	os.WriteFile(inF, b, 0o644)
+	stdin, _ := os.Open(inF)
+	stdout, _ := os.Create(filepath.Join(dir, "out"))
+	oldIn, oldOut := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = stdin, stdout
+	err := cmdHook([]string{name})
+	os.Stdin, os.Stdout = oldIn, oldOut
+	stdin.Close()
+	stdout.Close()
+	if err != nil {
+		t.Fatalf("hook %s: %v", name, err)
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, "out"))
+	if len(out) == 0 {
+		return ""
+	}
+	var got struct {
+		HookSpecificOutput struct {
+			HookEventName     string `json:"hookEventName"`
+			AdditionalContext string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("hook %s printed %q", name, out)
+	}
+	want := map[string]string{"prompt": "UserPromptSubmit", "subagent": "SubagentStart"}[name]
+	if got.HookSpecificOutput.HookEventName != want {
+		t.Fatalf("hook %s answered for %q", name, got.HookSpecificOutput.HookEventName)
+	}
+	return got.HookSpecificOutput.AdditionalContext
+}
+
+// claude code reads the vault rules once per session and gives every worker
+// the same copy. seen 2026-11-02: a 15 hour lead and its 46 workers never
+// got 36 lessons saved during the run
+// a fake home with a vault set up, and a session transcript in it
+type rulesHome struct {
+	t           *testing.T
+	home, v, tr string
+}
+
+func newRulesHome(t *testing.T) *rulesHome {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	h := &rulesHome{t, home, filepath.Join(home, "vault"), filepath.Join(home, "session.jsonl")}
+	os.MkdirAll(h.v, 0o755)
+	os.MkdirAll(filepath.Join(home, ".aivault"), 0o755)
+	cfg, _ := json.Marshal(map[string]string{"vault": h.v})
+	os.WriteFile(filepath.Join(home, ".aivault", "config.json"), cfg, 0o644)
+	for n, c := range map[string]string{
+		"AGENTS.md":   "# ai vault\n\n- search first\n",
+		"me.md":       "# me\n\n- lowercase\n",
+		"mistakes.md": "# mistakes\n\n- pkill took down a server. -> stop only your own pid\n",
+		"remember.md": "# remember\n\n- no em dashes\n",
+	} {
+		os.WriteFile(filepath.Join(h.v, n), []byte(c), 0o644)
+	}
+	return h
+}
+
+var allRules = []string{"AGENTS.md", "me.md", "mistakes.md", "remember.md"}
+
+// what claude code attaches when it loads the rules: each file without its last newline
+func (h *rulesHome) loaded(names ...string) string {
+	var fs []map[string]string
+	for _, n := range names {
+		c, _ := os.ReadFile(filepath.Join(h.v, n))
+		fs = append(fs, map[string]string{"path": filepath.Join(h.v, n), "type": "User", "content": strings.TrimRight(string(c), "\n")})
+	}
+	fs = append(fs, map[string]string{"path": filepath.Join(h.home, "proj", "CLAUDE.md"), "type": "Project", "content": "- project rule"})
+	b, _ := json.Marshal(map[string]any{"type": "attachment", "attachment": map[string]any{"type": "instructions", "files": fs}})
+	return string(b)
+}
+
+// how claude code keeps what a hook said
+func handed(ctx string) string {
+	b, _ := json.Marshal(map[string]any{"type": "attachment", "attachment": map[string]any{"type": "hook_additional_context", "hookEvent": "UserPromptSubmit", "content": []string{ctx}}})
+	return string(b)
+}
+
+func (h *rulesHome) write(lines ...string) { os.WriteFile(h.tr, []byte(jl(lines...)), 0o644) }
+
+func (h *rulesHome) add(n, line string) {
+	f, _ := os.OpenFile(filepath.Join(h.v, n), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	f.WriteString(line + "\n")
+	f.Close()
+}
+
+func (h *rulesHome) prompt(s string) string {
+	return runHook(h.t, "prompt", map[string]any{"prompt": s, "transcript_path": h.tr, "hook_event_name": "UserPromptSubmit"})
+}
+
+func TestRulesRefresh(t *testing.T) {
+	h := newRulesHome(t)
+	v, loaded, write, appendTo, prompt, all := h.v, h.loaded, h.write, h.add, h.prompt, allRules
+
+	// nothing loaded yet: claude code attaches the rules after the first prompt hook
+	write(p("hi"))
+	if got := prompt("hi"); got != "" {
+		t.Fatalf("no copy loaded yet, still handed over:\n%s", got)
+	}
+	// the copy this session loaded when it started
+	first := loaded(all...)
+	write(p("hi"), first)
+	if got := prompt("<task-notification>done</task-notification>"); got != "" {
+		t.Fatalf("nothing changed, still handed over:\n%s", got)
+	}
+
+	tracker := "- the tracker went stale for 2.5 hours. -> write it after every merge (2026-11-01, claude-code)"
+	tabs := "- tabs in go"
+	appendTo("mistakes.md", tracker)
+	appendTo("remember.md", tabs)
+	got := prompt("<task-notification>worker finished</task-notification>")
+	for _, want := range []string{tracker, tabs, "[mistakes.md]", "[remember.md]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "pkill") || strings.Contains(got, "em dashes") || strings.Contains(got, "project rule") {
+		t.Fatalf("old or non-vault lines handed over again:\n%s", got)
+	}
+
+	// once per change: claude code keeps what the hook said in the transcript
+	write(p("hi"), first, handed(got))
+	if again := prompt("go on"); again != "" {
+		t.Fatalf("same lines handed over twice:\n%s", again)
+	}
+	pkill := "- a worker used pkill. -> never pkill"
+	appendTo("mistakes.md", pkill)
+	next := prompt("go on")
+	if !strings.Contains(next, pkill) || strings.Contains(next, tracker) {
+		t.Fatalf("want only the newest line:\n%s", next)
+	}
+
+	// a mistake nudge and new lines come out together, and both get read back
+	write(p("hi"), first, handed(got))
+	both := prompt("you made a mistake there")
+	if !strings.Contains(both, `file "mistakes"`) || !strings.Contains(both, pkill) {
+		t.Fatalf("want the nudge and the new line:\n%s", both)
+	}
+	write(p("hi"), first, handed(got), handed(both))
+	if again := prompt("go on"); again != "" {
+		t.Fatalf("lines handed over next to a nudge came back:\n%s", again)
+	}
+
+	// compaction or a restart: claude code attaches a fresh copy, that's the new base
+	write(p("hi"), first, handed(got), loaded("mistakes.md", "remember.md"))
+	if again := prompt("go on"); again != "" {
+		t.Fatalf("fresh copy loaded, still handed over:\n%s", again)
+	}
+
+	// a worker gets claude code's copy, never what the hook told its parent
+	write(p("hi"), first, handed(got))
+	w := runHook(t, "subagent", map[string]any{"transcript_path": h.tr, "agent_id": "a1", "agent_type": "general-purpose", "hook_event_name": "SubagentStart"})
+	for _, want := range []string{tracker, tabs, pkill} {
+		if !strings.Contains(w, want) {
+			t.Fatalf("worker missing %q in:\n%s", want, w)
+		}
+	}
+
+	// a brand new top-level file comes over whole
+	os.WriteFile(filepath.Join(v, "dont.md"), []byte("# dont\n\n- no badges\n"), 0o644)
+	write(p("hi"), first, handed(got), handed(next))
+	if nf := prompt("go on"); !strings.Contains(nf, "[dont.md]") || !strings.Contains(nf, "- no badges") {
+		t.Fatalf("new file missing:\n%s", nf)
+	}
+
+	// a session that never loaded the vault gets nothing
+	write(p("hi"), `{"type":"attachment","attachment":{"type":"instructions","files":[{"path":"/p/CLAUDE.md","type":"Project","content":"x"}]}}`)
+	if got := prompt("go on"); got != "" {
+		t.Fatalf("vault never loaded, still handed over:\n%s", got)
+	}
+}
+
+// a long run piles up lessons. claude code may cut a long hook context, so
+// they go over a few at a time, the rest next turn, and it says where they are
+func TestRulesRefreshFits(t *testing.T) {
+	h := newRulesHome(t)
+	first := h.loaded(allRules...)
+	for i := 0; i < 60; i++ {
+		h.add("mistakes.md", fmt.Sprintf("- lesson %02d %s", i, strings.Repeat("x", 300)))
+	}
+	lines := []string{p("hi"), first}
+	h.write(lines...)
+	got := map[string]bool{}
+	for round := 0; ; round++ {
+		out := h.prompt("go on")
+		if out == "" {
+			break
+		}
+		if round > 20 {
+			t.Fatal("never ran out")
+		}
+		if len(out) > 8000 {
+			t.Fatalf("round %d: %d chars, claude code may cut it", round, len(out))
+		}
+		n := 0
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "- lesson") {
+				got[l[:11]] = true
+				n++
+			}
+		}
+		if n == 0 {
+			t.Fatalf("round %d handed over no lesson:\n%s", round, out)
+		}
+		if len(got) < 60 && !strings.Contains(out, filepath.Join(h.v, "mistakes.md")) {
+			t.Fatalf("round %d cut it short without saying where the rest is:\n%s", round, out)
+		}
+		lines = append(lines, handed(out))
+		h.write(lines...)
+	}
+	if len(got) != 60 {
+		t.Fatalf("handed over %d of 60 lessons", len(got))
 	}
 }

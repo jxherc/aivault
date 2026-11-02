@@ -8,10 +8,12 @@ import (
 )
 
 // claude code hooks in ~/.claude/settings.json: `aivault hook prompt` on
-// UserPromptSubmit and `aivault hook stop` on Stop. they nudge, then insist,
-// that a mistake or a "remember this" gets saved. other hooks stay untouched
+// UserPromptSubmit and `aivault hook stop` on Stop nudge, then insist, that a
+// mistake or a "remember this" gets saved. the prompt one and `aivault hook
+// subagent` on SubagentStart also hand over rules lines added after the
+// session loaded them. other hooks stay untouched
 
-var claudeHookEvents = [][2]string{{"UserPromptSubmit", "prompt"}, {"Stop", "stop"}}
+var claudeHookEvents = [][2]string{{"UserPromptSubmit", "prompt"}, {"Stop", "stop"}, {"SubagentStart", "subagent"}}
 
 func claudeSettings(e *Env) string { return filepath.Join(e.ClaudeDir, "settings.json") }
 

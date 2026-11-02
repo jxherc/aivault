@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+// installs from before the subagent hook have only prompt and stop
+func TestClaudeHooksUpgrade(t *testing.T) {
+	old := `{
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "\"/u/bin/aivault\" hook prompt", "timeout": 10}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "\"/u/bin/aivault\" hook stop", "timeout": 10}]}]
+  }
+}
+`
+	if bad := hooksMissing([]byte(old), "/u/bin/aivault"); len(bad) != 1 || !strings.Contains(bad[0], "SubagentStart") {
+		t.Fatalf("doctor: %v", bad)
+	}
+	out, err := hooksApply([]byte(old), "/u/bin/aivault")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(out), "hook prompt") != 1 || strings.Count(string(out), "hook stop") != 1 || !strings.Contains(string(out), "hook subagent") {
+		t.Fatalf("sync:\n%s", out)
+	}
+	if bad := hooksMissing(out, "/u/bin/aivault"); len(bad) != 0 {
+		t.Fatalf("doctor after sync: %v", bad)
+	}
+}
+
 func TestClaudeHooks(t *testing.T) {
 	theirs := `{
   "model": "opus",
@@ -23,7 +47,7 @@ func TestClaudeHooks(t *testing.T) {
 			t.Fatalf("%q: %v", orig, err)
 		}
 		s := string(out)
-		if !strings.Contains(s, `"\"/u/bin/aivault\" hook prompt"`) || !strings.Contains(s, `"\"/u/bin/aivault\" hook stop"`) {
+		if !strings.Contains(s, `"\"/u/bin/aivault\" hook prompt"`) || !strings.Contains(s, `"\"/u/bin/aivault\" hook stop"`) || !strings.Contains(s, `"\"/u/bin/aivault\" hook subagent"`) {
 			t.Fatalf("%q: hooks missing:\n%s", orig, s)
 		}
 		if len(hooksMissing(out, "/u/bin/aivault")) != 0 {
@@ -38,7 +62,7 @@ func TestClaudeHooks(t *testing.T) {
 		if strings.Contains(string(moved), "/u/bin") || strings.Count(string(moved), "hook stop") != 1 {
 			t.Fatalf("move:\n%s", moved)
 		}
-		if len(hooksMissing(out, "/opt/aivault")) != 2 {
+		if len(hooksMissing(out, "/opt/aivault")) != 3 {
 			t.Fatal("doctor should see a stale path")
 		}
 		back, err := hooksUndo(moved)
