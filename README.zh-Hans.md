@@ -236,7 +236,7 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 - 每个连上的工具都会拿到 vault 规则和两个 vault 工具，但什么时候调用 `vault_search` 和 `vault_remember` 由模型决定。默认规则催得很紧（回答任何关于你的问题前先搜索，你一说“记住”就保存），大多数模型都会照做，但总有些回答会跳过 vault
 - 拿到规则副本的工具（codex、pi、hermes、kimi、dsh，以及上表里标了“副本”的其他工具）要等 `aivault sync` 之后才看得到你自己的改动，除非开了 autosync。用 `vault_remember` 加 `file` 添加的行会马上更新它们的副本
 - vault 顶层的每个文件都会进每个工具的上下文。文件一大，每次会话都要多花 token，还可能让工具超出大小上限。Hermes 和 DeepSeek Harness 有上限（见下文），规则快被截断时 `doctor` 会提醒
-- 工具在会话开始时加载规则。`init` 或 `sync` 之后要重启它们
+- 工具在会话开始时加载规则。`init` 或 `sync` 之后要重启它们。vault 顶层文件里的新行，Claude Code 在下一条消息时就会拿到（见下面的各个工具），但删掉的行要重启后才会从它那份里消失，改写过的行会和旧行同时存在，已经在跑的子 agent 也拿不到
 - 配置之后才装的工具，要再跑一次 `aivault init` 才会连上
 - 工具存进自己记忆的东西，要到下次同步才会进 vault，不是马上。开了 autosync 的话，一小时内就会到。没开的话，没有任何东西会替你跑 sync
 - 搜索就是普通的关键词匹配，不是语义搜索。记忆的措辞和问题不一样时，可能搜不到
@@ -248,7 +248,7 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 - `init --import` 会移动规则文本和 skill 文件夹。如果 skill 是指向别处的链接，或者已经有另一个同名的 skill，它就不动这些 skill。看清它输出了什么
 
 **各个工具**
-- **Claude Code** 还会在 `~/.claude/settings.json` 里多两个 hook。你的消息指出错误、报告 bug 或者说“记住”时，一个会把提醒放在消息旁边。另一个在 `vault_remember` 用对文件跑过之前，不让这一轮结束。它只问一次，不会连着问两次，你明确说“别调用任何工具”时也以你为准。只有你自己说的话才算：别的会话发来的消息、应用的通知，或者 `mistakes.md` 这样的文件名都不算。你自己的 hook 原样保留，`aivault remove` 会把我们的拿掉。其他工具只有规则文本
+- **Claude Code** 还会在 `~/.claude/settings.json` 里多三个 hook。你的消息指出错误、报告 bug 或者说“记住”时，第一个会把提醒放在消息旁边。第二个在 `vault_remember` 用对文件跑过之前，不让这一轮结束。它只问一次，不会连着问两次，你明确说“别调用任何工具”时也以你为准。只有你自己说的话才算：别的会话发来的消息、应用的通知，或者 `mistakes.md` 这样的文件名都不算。Claude Code 每个会话只读一次规则，子 agent 拿到的也是同一份，所以长会话中途存下的新行，要等到压缩上下文或重启才会读到。所以第一个 hook 还会在下一条消息时（任务通知和定时任务也算）把 vault 顶层文件里的新行交过去，每行只交一次；第三个 hook 会把新子 agent 那份里缺的行交给它。你自己的 hook 原样保留，`aivault remove` 会把我们的拿掉。其他工具只有规则文本
 - **OpenCode**：如果你的 `opencode.json` 里有 skill 白名单（`"permission": {"skill": {"*": "deny", ...}}`），不在名单上的 vault skill 会一直被拦着。aivault 不会改你的权限规则：`init` 和 `doctor` 会告诉你有多少个 vault skill 被拦了，列出其中几个，并给出要加的那一行。OpenCode 也会读 `~/.claude/skills` 和 `~/.agents/skills`，所以同一个 skill 可能列出两次
 - **Codex**：它会拦下没人批准过的 mcp 调用，而 headless 运行时没法询问，所以 aivault 预先批准了自己的两个工具（`default_tools_approval_mode = "approve"`）。Codex 会完整读取 `~/.codex/AGENTS.md`，`project_doc_max_bytes` 只限制项目里的 AGENTS.md
 - **Gemini CLI**：在你没信任过的文件夹里，所有 mcp 服务器都是关的，用户级的也一样。vault 规则照样会加载，但要信任这个文件夹之后 `vault_search` 才会出现。如果你让它走代理，Gemini CLI 还会调用它自己内置的模型名，代理得认得这些名字
