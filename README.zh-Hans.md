@@ -256,7 +256,7 @@ aivault 负责把 vault 接进去，但没法让模型一定去用它。依赖�
 - **Hermes Agent**：`SOUL.md` 是它唯一的全局文件，所以 vault 规则就放在那里，挨着它的人设。`SOUL.md` 超过 `context_file_max_chars` 时，Hermes 会删掉中间部分，小模型上这个值是 20,000 个字符。规则快到这个长度时，`sync` 会在 `~/.hermes/config.yaml` 顶部设置 `context_file_max_chars`，被删掉了也会重新设上。你自己设的值会保留，太小的话 `doctor` 会告诉你
 - **ZCode** 只在 `features.mcp` 打开时才加载 mcp 服务器。只有你从没设置过它，aivault 才会把它打开。你自己设的 `false` 会保留，`doctor` 会告诉你
 - **Neovate** 自己也会读 `~/.claude/CLAUDE.md`，所以连了 Claude Code 的话，它会看到两遍规则
-- **DeepSeek Harness**：`~/.dsh/cordis.patch.yml` 必须保持是一个 yaml 列表，不然 aivault 不会去改它。dsh 把 `~/.dsh/AGENTS.md` 和所有项目里的 AGENTS.md 一起塞进 64 KB，所以 vault 规则越大，留给项目文件的空间越少
+- **DeepSeek Harness**：`~/.dsh/cordis.patch.yml` 必须保持是一个 yaml 列表，不然 aivault 不会去改它。dsh 把 `~/.dsh/AGENTS.md` 和所有项目里的 AGENTS.md 一起塞进默认 agent preset 的 `maxBytes`（standard preset 里是 64 KB），所以 vault 规则越大，留给项目文件的空间越少。塞不下时，它会整份整份地丢掉文件，最先丢的就是 vault 那份。`doctor` 从 `~/.dsh/settings.yaml` 里 `agent-presets.default` 指定的 preset 读这个上限。想要更多空间，就把那个 preset 复制到 `~/.dsh/.agent-presets/`，调大 `maxBytes`，再把这份副本设成默认
 - **Crush** 的许可证（FSL）是 source-available，不是开源
 - **Gemini CLI** 从 2026-06-18 起不再支持免费账号。用 api key 还是能用
 - 带空格的 vault 路径（比如 icloud 的 `Mobile Documents`）对 Claude Code 的导入没问题。Gemini 和 Qwen 这时拿到的是副本而不是导入，所以改完也要跑 `sync`
