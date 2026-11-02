@@ -289,11 +289,90 @@ func TestLimitFind(t *testing.T) {
 	}
 }
 
+// dsh web sessions take the instruction cap from the default agent preset,
+// not from cordis.patch.yml. seen 2026-11-02: the owner's default preset
+// allows 262144 bytes and doctor still said to trim the rules
+func TestDshPresetCap(t *testing.T) {
+	f := newFake(t)
+	e := f.e
+	vdir := filepath.Join(e.Home, "v")
+	put(t, filepath.Join(vdir, "AGENTS.md"), strings.Repeat("x", 76000))
+	s, _ := LoadState(e)
+	if err := Apply(e, s, vdir, []string{"dsh"}, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	dir := dshDir(e)
+	// dsh's own presets, wherever the npm package is. pinned so the test
+	// doesn't depend on dsh being installed here
+	shipped := filepath.Join(e.Home, "npm", "presets")
+	old := dshShippedPresets
+	dshShippedPresets = func() []string { return []string{shipped} }
+	defer func() { dshShippedPresets = old }()
+	presetIn := func(root, id, row string) string {
+		p := filepath.Join(root, id, "agent.cordis.yml")
+		put(t, p, "- id: persona\n  name: '@deepseek-ai/dsh-persona'\n  config:\n    maxBytes: 5\n\n"+row+"\n- id: skill\n  name: '@deepseek-ai/dsh-skill'\n")
+		return p
+	}
+	preset := func(id, row string) string { return presetIn(filepath.Join(dir, ".agent-presets"), id, row) }
+	row := func(n string) string {
+		return "- id: agent-instructions\n  name: '@deepseek-ai/dsh-agent-instructions'\n  config:\n    maxBytes: " + n + "\n"
+	}
+	dshBad := func() string {
+		for _, b := range Doctor(e, s) {
+			if strings.Contains(b, "DeepSeek Harness") {
+				return b
+			}
+		}
+		return ""
+	}
+
+	// no setting: dsh uses its shipped standard preset, 65536. that one gets
+	// replaced on update, so the advice is a copy
+	if b := dshBad(); !strings.Contains(b, "into 65536") || !strings.Contains(b, "vault copy first") || !strings.Contains(b, "copy dsh's standard preset") {
+		t.Fatalf("standard preset, not found: %q", b)
+	}
+	presetIn(shipped, "standard", row("65536"))
+	if b := dshBad(); !strings.Contains(b, "into 65536") || !strings.Contains(b, "copy dsh's standard preset") {
+		t.Fatalf("standard preset: %q", b)
+	}
+	// a shipped id wins over a folder of the same name
+	preset("standard", row("300000"))
+	if b := dshBad(); !strings.Contains(b, "into 65536") {
+		t.Fatalf("shipped preset should win: %q", b)
+	}
+	// the owner's setup: a copy of standard with a bigger cap as the default
+	preset("standard-full-rules", row("262144"))
+	put(t, filepath.Join(dir, "settings.yaml"), "# new sessions use this\nagent-presets:\n  default: standard-full-rules # mine\nother:\n  default: nope\n")
+	if b := dshBad(); b != "" {
+		t.Fatalf("262144 fits, doctor still says: %q", b)
+	}
+	// a cap that's still too small names the preset to raise
+	p := preset("tight", row("70000"))
+	put(t, filepath.Join(dir, "settings.yaml"), "agent-presets:\n  default: 'tight'\n")
+	if b := dshBad(); !strings.Contains(b, "into 70000") || !strings.Contains(b, "raise maxBytes in "+p) {
+		t.Fatalf("tight preset: %q", b)
+	}
+	// the row first in its item, nested under an insert
+	preset("nested", "- insert:\n    - name: '@deepseek-ai/dsh-agent-instructions'\n      id: agent-instructions\n      config:\n        maxBytes: 300000\n")
+	put(t, filepath.Join(dir, "settings.yaml"), "agent-presets:\n\n  default: \"nested\"\n")
+	if b := dshBad(); b != "" {
+		t.Fatalf("nested row: %q", b)
+	}
+	// a default that names no preset there: dsh's own default
+	put(t, filepath.Join(dir, "settings.yaml"), "agent-presets:\n  default: gone\n")
+	if b := dshBad(); !strings.Contains(b, "into 65536") {
+		t.Fatalf("missing preset: %q", b)
+	}
+}
+
 // big rules: hermes gets its cut raised, codex isn't flagged (it reads the
 // global file whole), dsh says when the rules eat its shared budget
 func TestRulesLimits(t *testing.T) {
 	f := newFake(t)
 	e := f.e
+	old := dshShippedPresets
+	dshShippedPresets = func() []string { return nil } // not this machine's dsh
+	defer func() { dshShippedPresets = old }()
 	vdir := filepath.Join(e.Home, "v")
 	put(t, filepath.Join(vdir, "AGENTS.md"), strings.Repeat("rules rule 规则\n", 2500)) // ~45k chars
 	hdir := hermesDir(e)

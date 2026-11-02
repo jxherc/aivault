@@ -249,3 +249,41 @@ func yamlBody(b []byte) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// a key's value under a top-level map ("parent:\n  key: v"), or ""
+func yamlChildValue(b []byte, parent, key string) string {
+	in, at := false, -1
+	for _, l := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if yamlIndent(l) == 0 {
+			in, at = strings.TrimSpace(strings.SplitN(t, " #", 2)[0]) == parent+":", -1
+			continue
+		}
+		if !in {
+			continue
+		}
+		if at < 0 {
+			at = yamlIndent(l) // the first child sets the children's column
+		}
+		if yamlIndent(l) == at && strings.HasPrefix(t, key+":") {
+			return yamlValue(t[len(key)+1:])
+		}
+	}
+	return ""
+}
+
+// a plain scalar: quotes and a trailing comment off
+func yamlValue(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > 1 && (v[0] == '\'' || v[0] == '"') {
+		if i := strings.IndexByte(v[1:], v[0]); i >= 0 {
+			return v[1 : i+1]
+		}
+	}
+	return strings.TrimSpace(strings.SplitN(v, " #", 2)[0])
+}
+
+func yamlIndent(l string) int { return len(l) - len(strings.TrimLeft(l, " ")) }

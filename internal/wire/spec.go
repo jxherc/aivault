@@ -457,6 +457,9 @@ type limit struct {
 	file   func(e *Env) string
 	key    string
 	yaml   bool // the config is yaml, not toml
+	// the cap the tool uses now when it lives in a file we don't write
+	// (0 = not found, def applies), and how the user raises it
+	read func(e *Env) (int, string)
 }
 
 var limitMarks = marks{"# ai-vault:limit:start", "# ai-vault:limit:end"}
@@ -499,6 +502,11 @@ func (l *limit) find(b []byte) (string, bool) {
 
 // what the tool reads up to right now
 func (l *limit) max(e *Env) int {
+	if l.read != nil {
+		if n, _ := l.read(e); n > 0 {
+			return n
+		}
+	}
 	if l.file == nil {
 		return l.def
 	}
@@ -560,7 +568,14 @@ func (l *limit) check(e *Env, label, p string, b []byte) []string {
 	msg := fmt.Sprintf("%s is %d %s, %s cuts it at %d", p, n, l.unit(), label, lim)
 	switch {
 	case l.file == nil && l.shared:
-		msg = fmt.Sprintf("%s is %d %s, and %s fits it and every project AGENTS.md into %d. trim the vault rules", p, n, l.unit(), label, lim)
+		// dsh drops whole files from the broadest, the global copy first
+		// (renderInstructionContext in dsh-agent-instructions)
+		msg = fmt.Sprintf("%s is %d %s, and %s fits it and every project AGENTS.md into %d. past that it leaves files out, the vault copy first. trim the vault rules", p, n, l.unit(), label, lim)
+		if l.read != nil {
+			if _, how := l.read(e); how != "" {
+				msg += ", or " + how
+			}
+		}
 	case l.file == nil:
 		msg += ". trim the vault rules"
 	default:

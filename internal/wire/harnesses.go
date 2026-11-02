@@ -1,7 +1,11 @@
 package wire
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -235,14 +239,103 @@ var kimi = build(&spec{
 // deepseek harness. mcp servers are `insert` patches in a top-level yaml list
 var dshDir = homeDir("DSH_HOME", ".dsh")
 
+// the instruction cap dsh web sessions use, and how to raise it.
+// from dsh 0.1.5-rc.2: the default preset is `agent-presets.default` in
+// $DSH_HOME/settings.yaml, else "standard" (dsh-web-app cordis.patch.yml,
+// which also turns off the 65536 row in dsh-base). presets are looked up in
+// the shipped root, then $DSH_HOME/.agent-presets, and an earlier root wins
+// a duplicate id (dsh-agent-presets lib/invariant.js resolvedRoots). the cap
+// is maxBytes on the '@deepseek-ai/dsh-agent-instructions' row. 0 = unknown
+func dshCap(e *Env) (int, string) {
+	settings := filepath.Join(dshDir(e), "settings.yaml")
+	b, _ := read(settings)
+	id := yamlChildValue(b, "agent-presets", "default")
+	if id == "" {
+		id = "standard"
+	}
+	mine := filepath.Join(dshDir(e), ".agent-presets")
+	// a shipped preset gets replaced on every dsh update, so it's copied, not edited
+	copyIt := "copy dsh's " + id + " preset into " + mine + " with a bigger maxBytes and make it agent-presets.default in " + settings
+	for _, root := range dshShippedPresets() {
+		if b, err := os.ReadFile(filepath.Join(root, id, "agent.cordis.yml")); err == nil {
+			return presetMaxBytes(b), copyIt
+		}
+	}
+	p := filepath.Join(mine, id, "agent.cordis.yml")
+	if b, err := os.ReadFile(p); err == nil {
+		return presetMaxBytes(b), "raise maxBytes in " + p
+	}
+	return 0, copyIt
+}
+
+// where dsh's own presets may be: inside the npm package, found from the dsh
+// command (an npm link to lib/bin.js) or from node's global node_modules
+var dshShippedPresets = func() []string {
+	const rel = "@deepseek-ai/dsh-agent-presets/presets"
+	var out []string
+	try := func(nm string) {
+		for _, d := range []string{filepath.Join(nm, "@deepseek-ai/dsh/node_modules", rel), filepath.Join(nm, rel)} {
+			if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+				out = append(out, d)
+			}
+		}
+	}
+	if p, err := exec.LookPath("dsh"); err == nil {
+		if p, err = filepath.EvalSymlinks(p); err == nil {
+			for d := filepath.Dir(p); filepath.Dir(d) != d; d = filepath.Dir(d) {
+				if filepath.Base(d) == "node_modules" {
+					try(d)
+					break
+				}
+			}
+		}
+	}
+	if p, err := exec.LookPath("node"); err == nil {
+		try(filepath.Join(filepath.Dir(p), "..", "lib", "node_modules")) // unix prefix
+		try(filepath.Join(filepath.Dir(p), "node_modules"))              // windows
+	}
+	return out
+}
+
+// maxBytes of the dsh-agent-instructions row in a preset's agent.cordis.yml
+func presetMaxBytes(b []byte) int {
+	lines := strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n")
+	for i, l := range lines {
+		k := strings.Index(l, "name:")
+		if k < 0 || yamlValue(l[k+5:]) != "@deepseek-ai/dsh-agent-instructions" {
+			continue
+		}
+		// the row: lines around name: at its column or deeper. above it only
+		// when it isn't the "- " line that starts the row
+		in := func(j int) bool { return strings.TrimSpace(lines[j]) == "" || yamlIndent(lines[j]) >= k }
+		lo, hi := i, i+1
+		for lo > 0 && in(lo-1) && !strings.HasPrefix(strings.TrimSpace(l), "- ") {
+			lo--
+		}
+		for hi < len(lines) && in(hi) {
+			hi++
+		}
+		for _, r := range lines[lo:hi] {
+			if m := maxBytesRe.FindStringSubmatch(r); m != nil {
+				n, _ := strconv.Atoi(m[1])
+				return n
+			}
+		}
+		return 0
+	}
+	return 0
+}
+
+var maxBytesRe = regexp.MustCompile(`^\s*maxBytes:\s*(\d+)\s*(#.*)?$`)
+
 var dsh = build(&spec{
 	name: "dsh", label: "DeepSeek Harness", bins: []string{"dsh"},
 	memories: []memSrc{{files: memFile(func(e *Env) string { return filepath.Join(dshDir(e), "lessons.md") }), split: splitBullets}},
 	dir:      dshDir,
 	rules:    in(dshDir, "AGENTS.md"), rulesHow: rulesCopy,
-	// every AGENTS.md of a session shares one budget, global first
-	// (dsh-agent-instructions maxBytes in dsh-base/cordis.patch.yml)
-	limit:     &limit{def: 65536, shared: true},
+	// every AGENTS.md of a session shares one budget, global first. the
+	// budget is the default agent preset's (see dshCap), 65536 in standard
+	limit:     &limit{def: 65536, shared: true, read: dshCap},
 	skills:    agentsSkills,
 	skillFrom: func(e *Env) []string { return []string{filepath.Join(dshDir(e), "skills"), e.AgentsSkills} },
 	yblock:    in(dshDir, "cordis.patch.yml"),
