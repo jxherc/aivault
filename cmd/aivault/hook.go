@@ -24,13 +24,43 @@ var (
 	// a bug report is a mistake too, just not named one: "x is broken"
 	bugRe      = regexp.MustCompile(`(?i)\bbugs?\b|\bbuggy\b|\bbroken\b|\bcrash(es|ed|ing)?\b|(doesn'?t|does not|won'?t|didn'?t) work\b|(isn'?t|is not|stopped|not) working\b|\b(throws?|threw|throwing|getting|got|gives?|giving|shows?|showing) (an? |this |that )?(error|exception)\b|\bfail(s|ed|ing)?\b|\bregress(ion|ed)?\b|\bglitch|报错|坏了|崩了|崩溃|用不了|不能用|不工作`)
 	rememberRe = regexp.MustCompile(`(?i)\bremember\b|from now on|记住|以后都`)
-	// naming the file isn't flagging a mistake: "check mistakes.md"
-	fileRe = regexp.MustCompile(`(?i)\bmistakes?\.md\b`)
+	// naming a file isn't flagging a mistake or asking to remember:
+	// "check mistakes.md", "the last line of remember.md"
+	fileRe = regexp.MustCompile(`(?i)\b(mistakes?|remember)\.md\b`)
+	// the claude desktop app puts these above a message. the user's words come after
+	reminderRe = regexp.MustCompile(`^\s*(<system-reminder>[\s\S]*?</system-reminder>\s*)+`)
 )
+
+// how the claude desktop app starts a message nobody typed: the brief a
+// session gets from the one that started it, and the summary after compaction
+var appOpeners = []string{
+	"Background (from the session that started this one)",
+	"Task (from the session that started this one)",
+	"This session is being continued from a previous conversation",
+}
 
 func flagsMistake(s string) bool { return mistakeRe.MatchString(fileRe.ReplaceAllString(s, "")) }
 
 func reportsBug(s string) bool { return bugRe.MatchString(s) }
+
+func wantsRemembered(s string) bool { return rememberRe.MatchString(fileRe.ReplaceAllString(s, "")) }
+
+// what the user wrote in a prompt, and whether it starts a new turn. tagged
+// text (<cross-session-message>, <task-notification>) arrives inside a turn and
+// isn't theirs. a brief from another session or a compaction summary starts a
+// turn, but nobody in it is the user
+func userWords(p string) (string, bool) {
+	p = reminderRe.ReplaceAllString(p, "")
+	if t := strings.TrimSpace(p); t == "" || strings.HasPrefix(t, "<") {
+		return "", false
+	}
+	for _, o := range appOpeners {
+		if strings.HasPrefix(strings.TrimSpace(p), o) {
+			return "", true
+		}
+	}
+	return p, true
+}
 
 func cmdHook(args []string) error {
 	if len(args) == 0 {
@@ -45,7 +75,8 @@ func cmdHook(args []string) error {
 	json.Unmarshal(b, &in)
 	switch args[0] {
 	case "prompt":
-		if msg := promptNudge(in.Prompt); msg != "" {
+		words, _ := userWords(in.Prompt)
+		if msg := promptNudge(words); msg != "" {
 			return json.NewEncoder(os.Stdout).Encode(map[string]any{
 				"hookSpecificOutput": map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": msg},
 			})
@@ -74,7 +105,7 @@ func promptNudge(p string) string {
 		return `aivault: the user is pointing out a mistake. before you go on, call vault_remember with file "mistakes": what went wrong, then "->" and the rule that stops it happening again. if you don't know the cause yet, save what happened now and save the cause when you find it. don't write a date, the tool adds one.`
 	case reportsBug(p):
 		return `aivault: this looks like a bug report. find the root cause, then fix every place with that cause, not just the one the user saw. once you know the cause, call vault_remember with file "mistakes": what went wrong, then "->" and the rule that stops it happening again, written for the cause so it covers every case like this one. don't write a date, the tool adds one.`
-	case rememberRe.MatchString(p):
+	case wantsRemembered(p):
 		return `aivault: the user wants this remembered. call vault_remember with file "remember" now, in one short line, before you answer. saying "noted" saves nothing.`
 	}
 	return ""
@@ -91,6 +122,17 @@ type turn struct {
 // sessions' messages don't count: a peer reporting its own mistake isn't the
 // user flagging one here
 func lastTurn(r io.Reader) turn {
+	start := func(s string, app bool) (turn, bool) {
+		w, ok := userWords(s)
+		if !ok {
+			return turn{}, false
+		}
+		t := turn{saved: map[string]bool{}}
+		if w != "" && !app {
+			t.said = []string{w}
+		}
+		return t, true
+	}
 	t := turn{saved: map[string]bool{}}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
@@ -98,6 +140,8 @@ func lastTurn(r io.Reader) turn {
 		var e struct {
 			Type       string `json:"type"`
 			IsMeta     bool   `json:"isMeta"`
+			TurnOrigin string `json:"turnOrigin"`
+			Entrypoint string `json:"entrypoint"`
 			Attachment struct {
 				Type   string `json:"type"`
 				Prompt string `json:"prompt"`
@@ -114,10 +158,13 @@ func lastTurn(r io.Reader) turn {
 			if e.IsMeta {
 				continue
 			}
+			// the desktop app marks what it sent itself: briefs and messages
+			// from other sessions, task notifications, scheduled runs
+			app := e.Entrypoint == "claude-desktop" && e.TurnOrigin != "" && e.TurnOrigin != "human"
 			var s string
 			if json.Unmarshal(e.Message.Content, &s) == nil {
-				if !strings.HasPrefix(s, "<") {
-					t = turn{said: []string{s}, saved: map[string]bool{}} // a new prompt starts a new turn
+				if nt, ok := start(s, app); ok {
+					t = nt // a new prompt starts a new turn
 				}
 				continue
 			}
@@ -131,11 +178,16 @@ func lastTurn(r io.Reader) turn {
 				tool = tool || p.Type == "tool_result"
 			}
 			for _, p := range parts {
-				switch {
-				case p.Type != "text":
-				case !tool && !strings.HasPrefix(p.Text, "<"):
-					t = turn{said: []string{p.Text}, saved: map[string]bool{}}
-				case strings.Contains(p.Text, "The user sent a new message while you were working:"):
+				if p.Type != "text" {
+					continue
+				}
+				if !tool {
+					if nt, ok := start(p.Text, app); ok {
+						t = nt
+					}
+					continue
+				}
+				if strings.Contains(p.Text, "The user sent a new message while you were working:") {
 					t.said = append(t.said, p.Text)
 				}
 			}
@@ -179,7 +231,7 @@ func unsaved(r io.Reader) string {
 		return `aivault: the user pointed out a mistake this turn and it isn't in the vault yet. call vault_remember with file "mistakes" now: what went wrong -> the rule that stops it happening again (no date, the tool adds it). if the cause is still unknown, save what happened and say so. if the user wasn't talking about a mistake at all, just end.`
 	case reportsBug(said) && !t.saved["mistakes"] && !t.saved["dont"]:
 		return `aivault: the user reported a bug this turn and no lesson is in the vault yet. if you found the cause, call vault_remember with file "mistakes" now: what went wrong -> the rule that stops it happening again, for the cause, not just this case. if the cause is still unknown, save what happened and say so. if it wasn't a bug report, or nothing an ai did caused it, just end.`
-	case rememberRe.MatchString(said) && !t.saved["*"]:
+	case wantsRemembered(said) && !t.saved["*"]:
 		return `aivault: the user asked you to remember something this turn and nothing was saved. call vault_remember with file "remember" now, one short line. if they didn't mean a lasting rule, just end.`
 	}
 	return ""
