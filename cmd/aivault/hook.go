@@ -45,6 +45,10 @@ var appOpeners = []string{
 	"Background (from the session that started this one)",
 	"Task (from the session that started this one)",
 	"This session is being continued from a previous conversation",
+	// a background worker's report. seen 2026-11-05: its "corrections" and
+	// "wrong" set off the bug check twice
+	"<task-notification>",
+	"[SYSTEM NOTIFICATION - NOT USER INPUT]",
 }
 
 func flagsMistake(s string) bool { return mistakeRe.MatchString(fileRe.ReplaceAllString(s, "")) }
@@ -59,13 +63,14 @@ func wantsRemembered(s string) bool { return rememberRe.MatchString(fileRe.Repla
 // turn, but nobody in it is the user
 func userWords(p string) (string, bool) {
 	p = reminderRe.ReplaceAllString(p, "")
-	if t := strings.TrimSpace(p); t == "" || strings.HasPrefix(t, "<") {
-		return "", false
-	}
+	t := strings.TrimSpace(p)
 	for _, o := range appOpeners {
-		if strings.HasPrefix(strings.TrimSpace(p), o) {
+		if strings.HasPrefix(t, o) {
 			return "", true
 		}
+	}
+	if t == "" || strings.HasPrefix(t, "<") {
+		return "", false
 	}
 	return p, true
 }
@@ -173,8 +178,12 @@ func lastTurn(r io.Reader) turn {
 			TurnOrigin string `json:"turnOrigin"`
 			Entrypoint string `json:"entrypoint"`
 			Attachment struct {
-				Type   string `json:"type"`
-				Prompt string `json:"prompt"`
+				Type        string `json:"type"`
+				Prompt      string `json:"prompt"`
+				CommandMode string `json:"commandMode"`
+				Origin      struct {
+					Kind string `json:"kind"`
+				} `json:"origin"`
 			} `json:"attachment"`
 			Message struct {
 				Content json.RawMessage `json:"content"`
@@ -222,8 +231,15 @@ func lastTurn(r io.Reader) turn {
 				}
 			}
 		case "attachment":
-			if e.Attachment.Type == "queued_command" && e.Attachment.Prompt != "" {
-				t.said = append(t.said, e.Attachment.Prompt)
+			// queued while a turn ran. only what the user typed counts:
+			// worker reports (commandMode task-notification) and peer
+			// messages queue the same way
+			a := e.Attachment
+			if a.Type != "queued_command" || a.CommandMode == "task-notification" || (a.Origin.Kind != "" && a.Origin.Kind != "human") {
+				continue
+			}
+			if w, ok := userWords(a.Prompt); ok && w != "" {
+				t.said = append(t.said, w)
 			}
 		case "assistant":
 			var parts []struct {

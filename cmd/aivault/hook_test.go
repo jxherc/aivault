@@ -71,6 +71,34 @@ func TestStopHook(t *testing.T) {
 	}
 }
 
+// seen 2026-11-05: a unit worker's report ("teacher key corrections", "wrong")
+// blocked turns the user never reported a bug in. shapes copied from real
+// desktop transcripts
+const workerReport = "<task-notification>\n<task-id>a2e071a898cb45691</task-id>\n<tool-use-id>toolu_013rSwCEJ6zMq5ZaFn8sG2bV</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a2e071a898cb45691.output</output-file>\n<status>completed</status>\n<summary>unit 2 worker done</summary>\n<result>teacher key corrections: q4 was wrong, the key is broken on q7</result>\n</task-notification>"
+
+func TestStopHookNotifications(t *testing.T) {
+	qn := `{"type":"attachment","attachment":{"type":"queued_command","commandMode":"task-notification","origin":{"kind":"task-notification","producer":"session-task"},"prompt":` + str(workerReport) + `}}`
+	qh := `{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"humanTurn":true,"prompt":"the export button is broken"}}`
+	qp := `{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"peer","from":"local_1"},"prompt":"<cross-session-message from=\"x\">the build is broken</cross-session-message>"}}`
+	for _, c := range []struct {
+		name, transcript string
+		block            bool
+	}{
+		{"report starts a turn", jl(dp("task_notification", workerReport), toolResult), false},
+		{"report queued mid-turn", jl(dp("human", "fix the readme"), toolResult, qn), false},
+		{"report under a reminder", jl(dp("task_notification", linked+workerReport)), false},
+		{"system notice", jl(dp("task_notification", "[SYSTEM NOTIFICATION - NOT USER INPUT]\nthe build failed")), false},
+		{"report ends an earlier flagged turn", jl(dp("human", "the export is broken"), dp("task_notification", workerReport)), false},
+		{"peer message queued", jl(dp("human", "fix the readme"), qp), false},
+		{"owner's queued message", jl(dp("human", "fix the readme"), toolResult, qh), true},
+		{"owner's real message under a reminder", jl(dp("human", linked+"the export button is broken"), toolResult), true},
+	} {
+		if got := unsaved(strings.NewReader(c.transcript)) != ""; got != c.block {
+			t.Errorf("%s: block = %v", c.name, got)
+		}
+	}
+}
+
 func TestPromptNudge(t *testing.T) {
 	for in, want := range map[string]string{
 		"find why you made that mistake":    "mistakes",
